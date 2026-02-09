@@ -370,3 +370,44 @@ fn test_llms_txt() {
     let body = resp.into_string().unwrap();
     assert!(body.contains("Blog Platform API"));
 }
+
+#[test]
+fn test_search_posts() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Search Blog");
+
+    // Create and publish a post
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Rust Programming Guide", "content": "Learn Rust with examples", "status": "published"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+
+    // Create a draft post (should NOT appear in search)
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Draft About Rust", "content": "secret draft"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+
+    // Search should find published post
+    let resp = client.get("/api/v1/search?q=Rust").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let results = body.as_array().unwrap();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0]["title"], "Rust Programming Guide");
+    assert_eq!(results[0]["blog_name"], "Search Blog");
+
+    // Search with no match
+    let resp = client.get("/api/v1/search?q=Python").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body.as_array().unwrap().len(), 0);
+
+    // Empty query should fail
+    let resp = client.get("/api/v1/search?q=").dispatch();
+    assert_eq!(resp.status(), Status::BadRequest);
+}

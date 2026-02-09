@@ -67,12 +67,24 @@ function Header({ onNavigate }) {
 function Home({ onNavigate }) {
   const [blogs, setBlogs] = useState([]);
   const [blogUrl, setBlogUrl] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState(null);
+  const [searching, setSearching] = useState(false);
 
   useEffect(() => { apiFetch('/blogs').then(setBlogs).catch(console.error); }, []);
 
   const handleGo = () => {
     const id = blogUrl.trim().split('/').pop();
     if (id) onNavigate('blog', id);
+  };
+
+  const handleSearch = () => {
+    const q = searchQuery.trim();
+    if (!q) return;
+    setSearching(true);
+    apiFetch(`/search?q=${encodeURIComponent(q)}`)
+      .then(r => { setSearchResults(r); setSearching(false); })
+      .catch(() => { setSearchResults([]); setSearching(false); });
   };
 
   return (
@@ -84,6 +96,33 @@ function Home({ onNavigate }) {
         <input style={{ ...s.input, marginBottom: 0, flex: 1 }} placeholder="Enter blog ID or URL..." value={blogUrl} onChange={e => setBlogUrl(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleGo()} />
         <button style={s.btn(true)} onClick={handleGo}>Go</button>
       </div>
+
+      <div style={{ ...s.card, display: 'flex', gap: '8px' }}>
+        <input style={{ ...s.input, marginBottom: 0, flex: 1 }} placeholder="Search posts..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSearch()} />
+        <button style={s.btn(true)} onClick={handleSearch} disabled={searching}>{searching ? '...' : 'Search'}</button>
+      </div>
+
+      {searchResults !== null && (
+        <div style={{ marginBottom: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <h2 style={{ fontSize: '1.1rem' }}>Search Results ({searchResults.length})</h2>
+            <span style={{ ...s.link, fontSize: '0.85rem' }} onClick={() => { setSearchResults(null); setSearchQuery(''); }}>Clear</span>
+          </div>
+          {searchResults.length === 0 && <p style={s.muted}>No posts found.</p>}
+          {searchResults.map(r => (
+            <div key={r.id} style={{ ...s.card, cursor: 'pointer' }} onClick={() => onNavigate('post', r.blog_id, r.slug)}>
+              <h3 style={{ fontSize: '1rem', marginBottom: '4px' }}>{r.title}</h3>
+              <div style={{ ...s.muted, display: 'flex', gap: '8px', fontSize: '0.8rem' }}>
+                <span>{r.blog_name}</span>
+                {r.author_name && <span>by {r.author_name}</span>}
+                {r.published_at && <span>{new Date(r.published_at).toLocaleDateString()}</span>}
+              </div>
+              {r.summary && <p style={{ ...s.muted, marginTop: '4px' }}>{r.summary}</p>}
+              {r.tags.length > 0 && <div style={{ marginTop: '4px' }}>{r.tags.map((t, i) => <span key={i} style={s.tag}>{t}</span>)}</div>}
+            </div>
+          ))}
+        </div>
+      )}
 
       {blogs.length > 0 && (
         <>

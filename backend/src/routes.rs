@@ -652,6 +652,59 @@ pub fn json_feed(blog_id: &str, db: &State<DbPool>) -> Result<Json<serde_json::V
     })))
 }
 
+// ─── Search ───
+
+#[derive(Serialize)]
+pub struct SearchResult {
+    pub id: String,
+    pub blog_id: String,
+    pub blog_name: String,
+    pub title: String,
+    pub slug: String,
+    pub summary: String,
+    pub tags: Vec<String>,
+    pub author_name: String,
+    pub published_at: Option<String>,
+}
+
+#[get("/search?<q>&<limit>&<offset>")]
+pub fn search_posts(q: &str, limit: Option<i64>, offset: Option<i64>, db: &State<DbPool>) -> Result<Json<Vec<SearchResult>>, (Status, Json<ApiError>)> {
+    if q.trim().is_empty() {
+        return Err(err(Status::BadRequest, "Query parameter 'q' is required", "VALIDATION_ERROR"));
+    }
+    let conn = db.lock().unwrap();
+    let pattern = format!("%{}%", q.trim());
+    let lim = limit.unwrap_or(20).min(100).max(1);
+    let off = offset.unwrap_or(0).max(0);
+
+    let mut stmt = conn.prepare(
+        "SELECT p.id, p.blog_id, b.name, p.title, p.slug, p.summary, p.tags, p.author_name, p.published_at
+         FROM posts p JOIN blogs b ON b.id = p.blog_id
+         WHERE p.status = 'published'
+           AND (p.title LIKE ?1 OR p.content LIKE ?1 OR p.tags LIKE ?1 OR p.author_name LIKE ?1)
+         ORDER BY p.published_at DESC NULLS LAST
+         LIMIT ?2 OFFSET ?3"
+    ).map_err(|e| db_err(&e.to_string()))?;
+
+    let results = stmt.query_map(rusqlite::params![pattern, lim, off], |row| {
+        Ok(SearchResult {
+            id: row.get(0)?,
+            blog_id: row.get(1)?,
+            blog_name: row.get(2)?,
+            title: row.get(3)?,
+            slug: row.get(4)?,
+            summary: row.get(5)?,
+            tags: serde_json::from_str(&row.get::<_, String>(6)?).unwrap_or_default(),
+            author_name: row.get(7)?,
+            published_at: row.get(8)?,
+        })
+    }).map_err(|e| db_err(&e.to_string()))?
+    .filter_map(|r| r.ok())
+    .collect();
+
+    Ok(Json(results))
+}
+
 // ─── Catchers ───
 
 #[catch(401)]
