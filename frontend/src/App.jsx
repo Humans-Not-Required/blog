@@ -279,6 +279,13 @@ function PostView({ blogId, slug, onNavigate }) {
 
   useEffect(() => { loadPost(); }, [loadPost]);
   useEffect(() => { loadComments(); }, [loadComments]);
+  useEffect(() => {
+    if (post?.content_html && window.hljs) {
+      document.querySelectorAll('.post-content pre code').forEach(el => {
+        window.hljs.highlightElement(el);
+      });
+    }
+  }, [post?.content_html]);
 
   const handleComment = async () => {
     if (!newComment.trim() || !commentAuthor.trim()) return;
