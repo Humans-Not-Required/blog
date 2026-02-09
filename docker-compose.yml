@@ -10,6 +10,8 @@ services:
       - ROCKET_ADDRESS=0.0.0.0
       - DATABASE_PATH=/app/data/blog.db
     restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
 
 volumes:
   blog-data:
