@@ -12,6 +12,8 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
   - Auto-slug generation from titles
   - Draft/published workflow
   - Comments on published posts
+  - Comment moderation: delete comments with manage_key
+  - Post pinning: pin/unpin posts, pinned posts sort first
   - RSS 2.0 and JSON Feed 1.1
   - /llms.txt for API discovery
   - /api/v1/openapi.json — full OpenAPI 3.0.3 spec
@@ -25,7 +27,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
   - Client-side routing
   - Dark theme matching HNR design system
   - Auth key detection from URL (?key=) + localStorage persistence
-- **Tests** - 21 integration tests passing
+- **Tests** - 31 integration tests passing
 - **Docker** - 3-stage multi-stage build
 - **Auth** - Bearer/X-API-Key/?key= (same as kanban)
 
@@ -88,6 +90,10 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 - ~~**Staging migration**~~ ✅ — switched from local Docker build to ghcr.io/humans-not-required/blog:dev with Watchtower auto-updates
 - **Cloudflare tunnel** — task created for Jordan (needs DNS record in Cloudflare dashboard)
 
+### Completed (2026-02-09 Overnight Session 4 — 09:32 UTC)
+
+- ~~**Comment moderation + post pinning**~~ ✅ — `DELETE /comments/:comment_id` with manage_key auth; `POST /pin` + `POST /unpin`; pinned posts sort first. Frontend: pin/unpin button in post header + pinned badges in lists, comment delete button for editors. SSE listens to `comment.deleted`, `post.pinned`, `post.unpinned`. +2 integration tests. Commit: 4f39e6a
+
 ---
 
-*Last updated: 2026-02-09 08:50 UTC — post view tracking + blog stats. 29 tests passing (4 unit + 25 integration). Deployed to staging via ghcr.io.*
+*Last updated: 2026-02-09 09:32 UTC — comment moderation + post pinning. 35 tests passing (4 unit + 31 integration). Deployed to staging via ghcr.io.*
