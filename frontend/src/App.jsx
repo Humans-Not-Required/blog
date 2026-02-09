@@ -199,10 +199,28 @@ function BlogView({ blogId, onNavigate }) {
   const manageKey = localStorage.getItem(`blog_key_${blogId}`);
   const canEdit = !!manageKey;
 
-  useEffect(() => {
-    apiFetch(`/blogs/${blogId}`).then(setBlog).catch(() => setBlog({ error: true }));
+  const refreshPosts = useCallback(() => {
     apiFetch(`/blogs/${blogId}/posts`).then(setPosts).catch(console.error);
   }, [blogId]);
+
+  useEffect(() => {
+    apiFetch(`/blogs/${blogId}`).then(setBlog).catch(() => setBlog({ error: true }));
+    refreshPosts();
+  }, [blogId, refreshPosts]);
+
+  // SSE real-time updates
+  useEffect(() => {
+    const es = new EventSource(`${API}/blogs/${blogId}/events/stream`);
+    let debounce = null;
+    const handler = () => {
+      clearTimeout(debounce);
+      debounce = setTimeout(refreshPosts, 300);
+    };
+    es.addEventListener('post.created', handler);
+    es.addEventListener('post.updated', handler);
+    es.addEventListener('post.deleted', handler);
+    return () => { clearTimeout(debounce); es.close(); };
+  }, [blogId, refreshPosts]);
 
   if (!blog) return <div style={s.container}>Loading...</div>;
   if (blog.error) return <div style={s.container}><p>Blog not found.</p></div>;
@@ -379,6 +397,26 @@ function PostView({ blogId, slug, onNavigate }) {
 
   useEffect(() => { loadPost(); }, [loadPost]);
   useEffect(() => { loadComments(); }, [loadComments]);
+
+  // SSE real-time updates for comments
+  useEffect(() => {
+    const es = new EventSource(`${API}/blogs/${blogId}/events/stream`);
+    let debounce = null;
+    const handler = (e) => {
+      clearTimeout(debounce);
+      const data = JSON.parse(e.data);
+      if (e.type === 'comment.created' && post?.id && data.post_id === post.id) {
+        debounce = setTimeout(loadComments, 300);
+      } else if (e.type === 'post.updated' || e.type === 'post.deleted') {
+        debounce = setTimeout(loadPost, 300);
+      }
+    };
+    es.addEventListener('comment.created', handler);
+    es.addEventListener('post.updated', handler);
+    es.addEventListener('post.deleted', handler);
+    return () => { clearTimeout(debounce); es.close(); };
+  }, [blogId, post?.id, loadPost, loadComments]);
+
   useEffect(() => {
     if (post?.content_html && window.hljs) {
       document.querySelectorAll('.post-content pre code').forEach(el => {
