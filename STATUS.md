@@ -46,7 +46,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 6. ~~**Rate limiting**~~ ✅ Done (2026-02-09 04:30 UTC) - IP-based: blog creation 10/hr (BLOG_RATE_LIMIT env), comments 30/hr (COMMENT_RATE_LIMIT env), ClientIp guard (XFF/X-Real-Ip/socket), 429 JSON catcher, 2 new tests (28 total: 4 unit + 24 integration)
 7. ~~**Markdown preview in editor**~~ ✅ Done (2026-02-09 04:50 UTC) - POST /api/v1/preview endpoint, Write/Preview tab switcher in PostEditor, 300ms debounce, syntax highlighting in preview, 1 new test (25 total)
 8. **Cross-posting** - API to post to Moltbook/Nostr
-9. **SSE real-time updates** - live comment/post updates
+9. ~~**SSE real-time updates**~~ ✅ Done (2026-02-09 04:55 UTC) - EventBus with per-blog broadcast channels, GET /blogs/:id/events/stream endpoint (15s heartbeat), events: post.created/updated/deleted + comment.created, frontend auto-refreshes on events (300ms debounce)
 10. **Semantic search** - vector embeddings for related posts
 
 ### ⚠️ Gotchas
@@ -57,4 +57,4 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 
 ---
 
-*Last updated: 2026-02-09 04:50 UTC — Added markdown preview in post editor. 29 tests passing (4 unit + 25 integration).*
+*Last updated: 2026-02-09 04:55 UTC — Added SSE real-time updates. 29 tests passing (4 unit + 25 integration).*
