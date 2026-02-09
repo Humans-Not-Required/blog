@@ -6,6 +6,7 @@ use std::sync::Mutex;
 mod db;
 mod routes;
 mod auth;
+mod rate_limit;
 
 pub type DbPool = Mutex<rusqlite::Connection>;
 
@@ -23,8 +24,19 @@ fn rocket() -> _ {
         .to_cors()
         .expect("CORS config");
 
+    let blog_limit: u64 = std::env::var("BLOG_RATE_LIMIT")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(10);
+    let comment_limit: u64 = std::env::var("COMMENT_RATE_LIMIT")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(30);
+    let blog_limiter = rate_limit::RateLimiter::new(std::time::Duration::from_secs(3600), blog_limit);
+    let comment_limiter = rate_limit::RateLimiter::new(std::time::Duration::from_secs(3600), comment_limit);
+
     rocket::build()
         .manage(Mutex::new(conn))
+        .manage(routes::RateLimiters {
+            blog_creation: blog_limiter,
+            comment_creation: comment_limiter,
+        })
         .attach(cors)
         .mount("/api/v1", routes![
             routes::health,
@@ -45,5 +57,5 @@ fn rocket() -> _ {
         ])
         .mount("/", routes![routes::llms_txt])
         .mount("/", rocket::fs::FileServer::from(static_dir).rank(20))
-        .register("/", catchers![routes::not_found, routes::internal_error, routes::unauthorized])
+        .register("/", catchers![routes::not_found, routes::internal_error, routes::unauthorized, routes::too_many_requests])
 }

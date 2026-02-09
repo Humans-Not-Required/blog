@@ -4,7 +4,13 @@ use rocket::State;
 use serde::{Deserialize, Serialize};
 
 use crate::auth::{BlogToken, generate_key, hash_key};
+use crate::rate_limit::{ClientIp, RateLimiter};
 use crate::DbPool;
+
+pub struct RateLimiters {
+    pub blog_creation: RateLimiter,
+    pub comment_creation: RateLimiter,
+}
 
 // ─── Models ───
 
@@ -173,7 +179,11 @@ pub fn llms_txt() -> (Status, (rocket::http::ContentType, String)) {
 }
 
 #[post("/blogs", format = "json", data = "<req>")]
-pub fn create_blog(req: Json<CreateBlogReq>, db: &State<DbPool>) -> Result<(Status, Json<BlogCreated>), (Status, Json<ApiError>)> {
+pub fn create_blog(req: Json<CreateBlogReq>, client_ip: ClientIp, limiters: &State<RateLimiters>, db: &State<DbPool>) -> Result<(Status, Json<BlogCreated>), (Status, Json<ApiError>)> {
+    let rl = limiters.blog_creation.check_default(&client_ip.0);
+    if !rl.allowed {
+        return Err(err(Status::TooManyRequests, &format!("Rate limit exceeded. Try again in {} seconds", rl.reset_secs), "RATE_LIMIT_EXCEEDED"));
+    }
     let name = req.name.trim();
     if name.is_empty() {
         return Err(err(Status::UnprocessableEntity, "Name is required", "VALIDATION_ERROR"));
@@ -500,7 +510,11 @@ pub fn delete_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<Db
 }
 
 #[post("/blogs/<blog_id>/posts/<post_id>/comments", format = "json", data = "<req>")]
-pub fn create_comment(blog_id: &str, post_id: &str, req: Json<CreateCommentReq>, db: &State<DbPool>) -> Result<(Status, Json<CommentResponse>), (Status, Json<ApiError>)> {
+pub fn create_comment(blog_id: &str, post_id: &str, req: Json<CreateCommentReq>, client_ip: ClientIp, limiters: &State<RateLimiters>, db: &State<DbPool>) -> Result<(Status, Json<CommentResponse>), (Status, Json<ApiError>)> {
+    let rl = limiters.comment_creation.check_default(&client_ip.0);
+    if !rl.allowed {
+        return Err(err(Status::TooManyRequests, &format!("Rate limit exceeded. Try again in {} seconds", rl.reset_secs), "RATE_LIMIT_EXCEEDED"));
+    }
     let conn = db.lock().unwrap();
     // Verify post exists and belongs to blog
     conn.query_row(
@@ -715,6 +729,11 @@ pub fn unauthorized() -> Json<ApiError> {
 #[catch(404)]
 pub fn not_found() -> Json<ApiError> {
     Json(ApiError { error: "Not found".to_string(), code: "NOT_FOUND".to_string() })
+}
+
+#[catch(429)]
+pub fn too_many_requests() -> Json<ApiError> {
+    Json(ApiError { error: "Too many requests".to_string(), code: "RATE_LIMIT_EXCEEDED".to_string() })
 }
 
 #[catch(500)]

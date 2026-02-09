@@ -411,3 +411,65 @@ fn test_search_posts() {
     let resp = client.get("/api/v1/search?q=").dispatch();
     assert_eq!(resp.status(), Status::BadRequest);
 }
+
+#[test]
+fn test_blog_creation_rate_limit() {
+    // BLOG_RATE_LIMIT defaults to 10
+    std::env::set_var("BLOG_RATE_LIMIT", "3");
+    let client = test_client();
+
+    // First 3 should succeed
+    for i in 0..3 {
+        let resp = client.post("/api/v1/blogs")
+            .header(ContentType::JSON)
+            .body(format!(r#"{{"name": "Blog {}"}}"#, i))
+            .dispatch();
+        assert_eq!(resp.status(), Status::Created);
+    }
+
+    // 4th should be rate limited
+    let resp = client.post("/api/v1/blogs")
+        .header(ContentType::JSON)
+        .body(r#"{"name": "Blog 4"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::TooManyRequests);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["code"], "RATE_LIMIT_EXCEEDED");
+
+    std::env::remove_var("BLOG_RATE_LIMIT");
+}
+
+#[test]
+fn test_comment_creation_rate_limit() {
+    std::env::set_var("COMMENT_RATE_LIMIT", "2");
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Comment RL Blog");
+
+    // Create and publish a post
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Test Post", "content": "Content", "status": "published"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+
+    // First 2 comments should succeed
+    for i in 0..2 {
+        let resp = client.post(format!("/api/v1/blogs/{}/posts/{}/comments", blog_id, post_id))
+            .header(ContentType::JSON)
+            .body(format!(r#"{{"author_name": "User", "content": "Comment {}"}}"#, i))
+            .dispatch();
+        assert_eq!(resp.status(), Status::Created);
+    }
+
+    // 3rd comment should be rate limited
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/{}/comments", blog_id, post_id))
+        .header(ContentType::JSON)
+        .body(r#"{"author_name": "User", "content": "Spam"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::TooManyRequests);
+
+    std::env::remove_var("COMMENT_RATE_LIMIT");
+}
