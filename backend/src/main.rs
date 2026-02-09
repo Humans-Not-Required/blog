@@ -64,6 +64,9 @@ fn rocket() -> _ {
             routes::blog_event_stream,
             routes::related_posts,
             routes::blog_stats,
+            routes::export_markdown,
+            routes::export_html,
+            routes::export_nostr,
         ])
         .mount("/", routes![routes::llms_txt])
         .mount("/", rocket::fs::FileServer::from(static_dir).rank(20))

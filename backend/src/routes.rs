@@ -1133,6 +1133,185 @@ pub fn preview_markdown(req: Json<PreviewReq>) -> Json<PreviewResponse> {
     Json(PreviewResponse { html })
 }
 
+// ─── Export / Cross-posting ───
+
+#[derive(Serialize)]
+pub struct ExportMarkdown {
+    pub title: String,
+    pub slug: String,
+    pub author_name: String,
+    pub published_at: Option<String>,
+    pub tags: Vec<String>,
+    pub summary: String,
+    pub frontmatter: String,
+    pub content: String,
+    pub full_document: String,
+}
+
+#[get("/blogs/<blog_id>/posts/<slug>/export/markdown", rank = 3)]
+pub fn export_markdown(blog_id: &str, slug: &str, db: &State<DbPool>) -> Result<Json<ExportMarkdown>, (Status, Json<ApiError>)> {
+    let conn = db.lock().unwrap();
+    let post = conn.query_row(
+        "SELECT title, slug, content, summary, tags, author_name, published_at FROM posts WHERE blog_id = ?1 AND slug = ?2 AND status = 'published'",
+        rusqlite::params![blog_id, slug],
+        |row| Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?,
+            row.get::<_, String>(5)?,
+            row.get::<_, Option<String>>(6)?,
+        )),
+    ).map_err(|_| err(Status::NotFound, "Post not found or not published", "NOT_FOUND"))?;
+
+    let tags: Vec<String> = serde_json::from_str(&post.4).unwrap_or_default();
+    let tags_line = if tags.is_empty() { String::new() } else { format!("tags: [{}]\n", tags.iter().map(|t| format!("\"{}\"", t)).collect::<Vec<_>>().join(", ")) };
+
+    let frontmatter = format!(
+        "---\ntitle: \"{}\"\nauthor: \"{}\"\ndate: \"{}\"\n{}summary: \"{}\"\n---",
+        post.0.replace('"', "\\\""),
+        post.5.replace('"', "\\\""),
+        post.6.as_deref().unwrap_or(""),
+        tags_line,
+        post.3.replace('"', "\\\""),
+    );
+
+    let full_document = format!("{}\n\n{}", frontmatter, post.2);
+
+    Ok(Json(ExportMarkdown {
+        title: post.0,
+        slug: post.1,
+        author_name: post.5,
+        published_at: post.6,
+        tags,
+        summary: post.3,
+        frontmatter,
+        content: post.2,
+        full_document,
+    }))
+}
+
+#[get("/blogs/<blog_id>/posts/<slug>/export/html", rank = 4)]
+pub fn export_html(blog_id: &str, slug: &str, db: &State<DbPool>) -> ContentResult {
+    let conn = db.lock().unwrap();
+    let post = conn.query_row(
+        "SELECT title, content_html, summary, author_name, published_at, tags FROM posts WHERE blog_id = ?1 AND slug = ?2 AND status = 'published'",
+        rusqlite::params![blog_id, slug],
+        |row| Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, Option<String>>(4)?,
+            row.get::<_, String>(5)?,
+        )),
+    ).map_err(|_| err(Status::NotFound, "Post not found or not published", "NOT_FOUND"))?;
+
+    let tags: Vec<String> = serde_json::from_str(&post.5).unwrap_or_default();
+    let tags_html = if tags.is_empty() { String::new() } else {
+        format!("<div class=\"tags\">{}</div>", tags.iter().map(|t| format!("<span class=\"tag\">{}</span>", t)).collect::<Vec<_>>().join(" "))
+    };
+
+    let html = format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title}</title>
+<meta name="description" content="{summary}">
+<meta name="author" content="{author}">
+<style>
+body {{ max-width: 720px; margin: 0 auto; padding: 2rem; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #e2e8f0; background: #0f172a; }}
+h1 {{ font-size: 2rem; margin-bottom: 0.5rem; color: #f1f5f9; }}
+.meta {{ color: #94a3b8; margin-bottom: 2rem; }}
+.tags {{ margin-top: 0.5rem; }} .tag {{ background: #1e293b; padding: 2px 8px; border-radius: 4px; font-size: 0.85rem; color: #7dd3fc; margin-right: 4px; }}
+article {{ line-height: 1.8; }} article img {{ max-width: 100%; border-radius: 8px; }}
+pre {{ background: #1e293b; padding: 1rem; border-radius: 8px; overflow-x: auto; }}
+code {{ font-family: 'Fira Code', monospace; font-size: 0.9em; }} :not(pre) > code {{ background: #1e293b; padding: 2px 6px; border-radius: 4px; }}
+a {{ color: #38bdf8; }}
+blockquote {{ border-left: 3px solid #334155; margin-left: 0; padding-left: 1rem; color: #94a3b8; }}
+</style>
+</head>
+<body>
+<header>
+<h1>{title}</h1>
+<div class="meta">
+{author_html}{date_html}
+{tags_html}
+</div>
+</header>
+<article>{content}</article>
+</body>
+</html>"#,
+        title = post.0.replace('"', "&quot;"),
+        summary = post.2.replace('"', "&quot;"),
+        author = post.3.replace('"', "&quot;"),
+        author_html = if post.3.is_empty() { String::new() } else { format!("By {} ", post.3) },
+        date_html = post.4.as_ref().map(|d| format!("· {}", d)).unwrap_or_default(),
+        tags_html = tags_html,
+        content = post.1,
+    );
+
+    Ok((Status::Ok, (rocket::http::ContentType::HTML, html)))
+}
+
+/// Export as unsigned Nostr NIP-23 long-form content event template (kind 30023)
+#[derive(Serialize)]
+pub struct NostrExport {
+    pub kind: u32,
+    pub content: String,
+    pub tags: Vec<Vec<String>>,
+    pub note: String,
+}
+
+#[get("/blogs/<blog_id>/posts/<slug>/export/nostr", rank = 5)]
+pub fn export_nostr(blog_id: &str, slug: &str, db: &State<DbPool>) -> Result<Json<NostrExport>, (Status, Json<ApiError>)> {
+    let conn = db.lock().unwrap();
+    let post = conn.query_row(
+        "SELECT title, slug, content, summary, tags, author_name, published_at FROM posts WHERE blog_id = ?1 AND slug = ?2 AND status = 'published'",
+        rusqlite::params![blog_id, slug],
+        |row| Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?,
+            row.get::<_, String>(5)?,
+            row.get::<_, Option<String>>(6)?,
+        )),
+    ).map_err(|_| err(Status::NotFound, "Post not found or not published", "NOT_FOUND"))?;
+
+    let post_tags: Vec<String> = serde_json::from_str(&post.4).unwrap_or_default();
+
+    let mut nostr_tags: Vec<Vec<String>> = vec![
+        vec!["d".to_string(), post.1.clone()],
+        vec!["title".to_string(), post.0],
+    ];
+
+    if !post.3.is_empty() {
+        nostr_tags.push(vec!["summary".to_string(), post.3]);
+    }
+
+    if let Some(ref pa) = post.6 {
+        if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(pa) {
+            nostr_tags.push(vec!["published_at".to_string(), dt.timestamp().to_string()]);
+        }
+    }
+
+    for tag in &post_tags {
+        nostr_tags.push(vec!["t".to_string(), tag.clone()]);
+    }
+
+    Ok(Json(NostrExport {
+        kind: 30023,
+        content: post.2,
+        tags: nostr_tags,
+        note: "Unsigned NIP-23 event template. Sign with your Nostr key and publish to relays.".to_string(),
+    }))
+}
+
 // ─── Catchers ───
 
 #[catch(401)]

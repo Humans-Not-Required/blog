@@ -54,6 +54,9 @@ pub fn create_rocket(conn: rusqlite::Connection) -> rocket::Rocket<rocket::Build
             routes::blog_event_stream,
             routes::related_posts,
             routes::blog_stats,
+            routes::export_markdown,
+            routes::export_html,
+            routes::export_nostr,
         ])
         .mount("/", routes![routes::llms_txt])
         .register("/", catchers![routes::not_found, routes::internal_error, routes::unauthorized, routes::too_many_requests])

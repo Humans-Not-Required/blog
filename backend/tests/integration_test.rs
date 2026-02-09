@@ -806,3 +806,112 @@ fn test_pin_unpin_post() {
         .dispatch();
     assert_eq!(resp.status(), Status::NotFound);
 }
+
+#[test]
+fn test_export_markdown() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Export Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    // Create a published post with tags
+    let body_json = serde_json::json!({
+        "title": "Export Test",
+        "content": "# Hello\n\nThis is **bold**.",
+        "summary": "A test post",
+        "tags": ["rust", "blog"],
+        "status": "published",
+        "author_name": "Nanook"
+    });
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON)
+        .header(auth.clone())
+        .body(body_json.to_string())
+        .dispatch();
+
+    // Export as markdown
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/export-test/export/markdown", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["title"], "Export Test");
+    assert_eq!(body["author_name"], "Nanook");
+    assert!(body["frontmatter"].as_str().unwrap().contains("title:"));
+    assert!(body["full_document"].as_str().unwrap().contains("---"));
+    assert!(body["content"].as_str().unwrap().contains("**bold**"));
+    assert_eq!(body["tags"].as_array().unwrap().len(), 2);
+
+    // Draft post should not be exportable
+    let draft_json = serde_json::json!({
+        "title": "Draft Post",
+        "content": "draft content",
+        "status": "draft"
+    });
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON)
+        .header(auth)
+        .body(draft_json.to_string())
+        .dispatch();
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/draft-post/export/markdown", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+}
+
+#[test]
+fn test_export_html() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "HTML Export Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let body_json = serde_json::json!({
+        "title": "HTML Test",
+        "content": "# Heading\n\nParagraph.",
+        "tags": ["test"],
+        "status": "published",
+        "author_name": "Agent"
+    });
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON)
+        .header(auth)
+        .body(body_json.to_string())
+        .dispatch();
+
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/html-test/export/html", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    assert!(body.contains("<!DOCTYPE html>"));
+    assert!(body.contains("<title>HTML Test</title>"));
+    assert!(body.contains("By Agent"));
+    assert!(body.contains("<h1>"));
+}
+
+#[test]
+fn test_export_nostr() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Nostr Export Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let body_json = serde_json::json!({
+        "title": "Nostr Post",
+        "content": "Hello Nostr!",
+        "summary": "A nostr test",
+        "tags": ["nostr", "agents"],
+        "status": "published"
+    });
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON)
+        .header(auth)
+        .body(body_json.to_string())
+        .dispatch();
+
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/nostr-post/export/nostr", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["kind"], 30023);
+    assert_eq!(body["content"], "Hello Nostr!");
+    let tags = body["tags"].as_array().unwrap();
+    // Should have: d, title, summary, t (nostr), t (agents) = 5 tags
+    assert!(tags.len() >= 5);
+    assert_eq!(tags[0][0], "d");
+    assert_eq!(tags[0][1], "nostr-post");
+    assert_eq!(tags[1][0], "title");
+    assert_eq!(tags[1][1], "Nostr Post");
+    assert!(body["note"].as_str().unwrap().contains("NIP-23"));
+}
