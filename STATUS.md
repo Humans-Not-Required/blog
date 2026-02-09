@@ -61,6 +61,10 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 - Frontend needs `npm install` before build (node_modules not committed)
 - Staging uses ghcr.io image via Watchtower — do NOT use `docker compose up -d --build`
 
+### Completed (2026-02-09 Daytime Session 3 — 08:00 UTC)
+
+- ~~**Word count and reading time**~~ ✅ — `word_count` and `reading_time_minutes` fields on all post API responses. Computed from markdown content at 200 wpm. Frontend displays reading time in post cards (list view) and word count + reading time in post detail view. OpenAPI spec updated. 1 new integration test (31 total: 4 unit + 27 integration). Commit: d17f0a3
+
 ### Completed (2026-02-09 Daytime Session 2 — 07:45 UTC)
 
 - ~~**OpenAPI 3.0 spec**~~ ✅ — GET /api/v1/openapi.json, covers all endpoints, schemas, auth model. 1 new test (26 total).
@@ -77,4 +81,4 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 
 ---
 
-*Last updated: 2026-02-09 07:45 UTC — OpenAPI spec + tag filtering + app directory listing. 26 tests passing. Deployed to staging via ghcr.io.*
+*Last updated: 2026-02-09 08:00 UTC — word count + reading time on posts. 31 tests passing (4 unit + 27 integration). Deployed to staging via ghcr.io.*
