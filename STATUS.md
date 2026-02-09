@@ -53,6 +53,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 12. **Cloudflare tunnel** - set up blog.ckbdev.com — needs Jordan to add DNS record in Cloudflare dashboard
 13. ~~**CI/CD pipeline**~~ ✅ Done (2026-02-09 07:30 UTC)
 14. ~~**Clippy cleanup**~~ ✅ Done (2026-02-09 07:25 UTC)
+15. ~~**Post view tracking + blog stats**~~ ✅ Done (2026-02-09 08:50 UTC) - post_views table, view_count on all PostResponse fields, auto-recorded on GET by slug, GET /blogs/:id/stats with 24h/7d/30d views + top 10 posts. 1 new test (29 total). Also synced main.rs route mounts (related_posts was missing).
 
 ### ⚠️ Gotchas
 
@@ -60,6 +61,10 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 - Tests must run with `--test-threads=1` (shared in-memory DB)
 - Frontend needs `npm install` before build (node_modules not committed)
 - Staging uses ghcr.io image via Watchtower — do NOT use `docker compose up -d --build`
+
+### Completed (2026-02-09 Overnight Session 3 — 08:50 UTC)
+
+- ~~**Post view tracking + blog stats**~~ ✅ — `post_views` table with viewer_ip + indexes. `view_count` on all PostResponse fields (list, get-by-slug, query_post). Views auto-recorded fire-and-forget on get_post_by_slug. `GET /api/v1/blogs/:id/stats` returns total/published posts, comments, total views + 24h/7d/30d breakdowns, top 10 posts by views. Also synced main.rs routes with lib.rs (related_posts + blog_stats were missing from binary). 1 new integration test (29 total: 4 unit + 25 integration). Commit: 1c5bd11
 
 ### Completed (2026-02-09 Overnight Session 2 — 08:17 UTC)
 
@@ -85,4 +90,4 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 
 ---
 
-*Last updated: 2026-02-09 08:17 UTC — related posts feature. 32 tests passing (4 unit + 28 integration). Deployed to staging via ghcr.io.*
+*Last updated: 2026-02-09 08:50 UTC — post view tracking + blog stats. 29 tests passing (4 unit + 25 integration). Deployed to staging via ghcr.io.*
