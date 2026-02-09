@@ -198,6 +198,11 @@ pub fn blog_event_stream(
     .heartbeat(Duration::from_secs(15)))
 }
 
+#[get("/openapi.json")]
+pub fn openapi() -> (rocket::http::ContentType, &'static str) {
+    (rocket::http::ContentType::JSON, include_str!("../openapi.json"))
+}
+
 #[get("/llms.txt")]
 pub fn llms_txt() -> (Status, (rocket::http::ContentType, String)) {
     (Status::Ok, (rocket::http::ContentType::Plain,

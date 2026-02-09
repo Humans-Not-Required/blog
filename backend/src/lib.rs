@@ -32,6 +32,7 @@ pub fn create_rocket(conn: rusqlite::Connection) -> rocket::Rocket<rocket::Build
         .attach(cors)
         .mount("/api/v1", routes![
             routes::health,
+            routes::openapi,
             routes::create_blog,
             routes::list_blogs,
             routes::get_blog,

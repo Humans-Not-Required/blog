@@ -488,3 +488,17 @@ fn test_preview_markdown() {
     assert!(html.contains("<strong>"));
     assert!(html.contains("<em>"));
 }
+
+#[test]
+fn test_openapi_json() {
+    let client = test_client();
+    let resp = client.get("/api/v1/openapi.json").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    let spec: serde_json::Value = serde_json::from_str(&body).expect("Valid JSON");
+    assert_eq!(spec["openapi"], "3.0.3");
+    assert_eq!(spec["info"]["title"], "Blog Platform API");
+    assert!(spec["paths"]["/blogs"].is_object());
+    assert!(spec["paths"]["/blogs/{blogId}/posts"].is_object());
+    assert!(spec["components"]["schemas"]["Post"].is_object());
+}
