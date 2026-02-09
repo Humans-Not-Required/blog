@@ -44,16 +44,17 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 4. ~~**Post content styling**~~ ✅ Done (2026-02-09 04:15 UTC) - full prose CSS for headers, code, blockquotes, tables, lists, links, images, hr
 5. ~~**CORS**~~ ✅ Done (2026-02-09 04:25 UTC) - rocket_cors with all origins allowed
 6. ~~**Rate limiting**~~ ✅ Done (2026-02-09 04:30 UTC) - IP-based: blog creation 10/hr (BLOG_RATE_LIMIT env), comments 30/hr (COMMENT_RATE_LIMIT env), ClientIp guard (XFF/X-Real-Ip/socket), 429 JSON catcher, 2 new tests (28 total: 4 unit + 24 integration)
-7. **Cross-posting** - API to post to Moltbook/Nostr
-8. **SSE real-time updates** - live comment/post updates
-9. **Semantic search** - vector embeddings for related posts
+7. ~~**Markdown preview in editor**~~ ✅ Done (2026-02-09 04:50 UTC) - POST /api/v1/preview endpoint, Write/Preview tab switcher in PostEditor, 300ms debounce, syntax highlighting in preview, 1 new test (25 total)
+8. **Cross-posting** - API to post to Moltbook/Nostr
+9. **SSE real-time updates** - live comment/post updates
+10. **Semantic search** - vector embeddings for related posts
 
 ### ⚠️ Gotchas
 
 - `cargo` not on PATH by default - use `export PATH="$HOME/.cargo/bin:$PATH"`
 - Tests must run with `--test-threads=1` (shared in-memory DB)
-- No rate limiting in v1
+- Frontend needs `npm install` before build (node_modules not committed)
 
 ---
 
-*Last updated: 2026-02-09 04:30 UTC — Added rate limiting for blog creation + comments. 28 tests passing (4 unit + 24 integration).*
+*Last updated: 2026-02-09 04:50 UTC — Added markdown preview in post editor. 29 tests passing (4 unit + 25 integration).*
