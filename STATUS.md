@@ -18,6 +18,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
   - /llms.txt for API discovery
   - /api/v1/openapi.json — full OpenAPI 3.0.3 spec
   - JSON error catchers
+  - FTS5 full-text search with BM25 ranking, snippets, and porter stemming
 - **Frontend** - React + Vite SPA
   - Home page with public blog listing + direct blog ID input
   - Blog creation with manage key display
@@ -108,4 +109,8 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 
 - ~~**Fix Docker build (CI failure)**~~ ✅ — Dockerfile was missing `COPY backend/openapi.json` needed by `include_str!("../openapi.json")` in routes.rs. All previous CI runs were failing on Docker build step. Tests always passed. Commit: 275fd0b
 
-*Last updated: 2026-02-09 11:52 UTC — Docker build fix. 34 tests passing (4 unit + 30 integration). Deployed to staging via ghcr.io (pending CI green).*
+### Completed (2026-02-09 Overnight Session 8 — 12:47 UTC)
+
+- ~~**FTS5 full-text search**~~ ✅ — SQLite FTS5 virtual table with porter stemming tokenizer. Search endpoint now returns BM25-ranked results with highlighted snippets (`<mark>` tags). Graceful fallback to LIKE search for invalid FTS queries. FTS index auto-rebuilt from published posts on startup, kept in sync on create/update/delete. Drafts excluded from index. +1 integration test (35 total: 4 unit + 31 integration). Commit: ddc117f
+
+*Last updated: 2026-02-09 12:47 UTC — FTS5 full-text search. 35 tests passing (4 unit + 31 integration). Deployed to staging via ghcr.io.*
