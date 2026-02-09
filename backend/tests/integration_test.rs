@@ -619,3 +619,63 @@ fn test_related_posts() {
         assert!(r["score"].as_f64().unwrap() > 0.0);
     }
 }
+
+#[test]
+fn test_blog_stats_and_view_tracking() {
+    let client = test_client();
+
+    // Create blog
+    let resp = client.post("/api/v1/blogs").header(ContentType::JSON)
+        .body(r#"{"name":"Stats Blog"}"#).dispatch();
+    let blog: serde_json::Value = resp.into_json().unwrap();
+    let blog_id = blog["id"].as_str().unwrap();
+    let key = blog["manage_key"].as_str().unwrap();
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    // Create a published post
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title":"Stats Test Post","content":"Some content here for testing","tags":["test"],"status":"published"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let slug = post["slug"].as_str().unwrap();
+
+    // Initially view_count should be 0
+    assert_eq!(post["view_count"].as_i64().unwrap(), 0);
+
+    // View the post 3 times (each GET records a view)
+    for _ in 0..3 {
+        let resp = client.get(format!("/api/v1/blogs/{}/posts/{}", blog_id, slug)).dispatch();
+        assert_eq!(resp.status(), Status::Ok);
+    }
+
+    // Fourth view should show view_count = 3 (from previous 3 views)
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}", blog_id, slug)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let viewed: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(viewed["view_count"].as_i64().unwrap(), 3);
+
+    // Check blog stats
+    let resp = client.get(format!("/api/v1/blogs/{}/stats", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let stats: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(stats["blog_name"].as_str().unwrap(), "Stats Blog");
+    assert_eq!(stats["total_posts"].as_i64().unwrap(), 1);
+    assert_eq!(stats["published_posts"].as_i64().unwrap(), 1);
+    // 4 total views (3 + the one that checked view_count)
+    assert_eq!(stats["total_views"].as_i64().unwrap(), 4);
+    assert_eq!(stats["views_24h"].as_i64().unwrap(), 4);
+    assert_eq!(stats["views_7d"].as_i64().unwrap(), 4);
+    assert_eq!(stats["views_30d"].as_i64().unwrap(), 4);
+
+    // Top posts should include our post
+    let top = stats["top_posts"].as_array().unwrap();
+    assert_eq!(top.len(), 1);
+    assert_eq!(top[0]["title"].as_str().unwrap(), "Stats Test Post");
+    assert_eq!(top[0]["view_count"].as_i64().unwrap(), 4);
+
+    // Stats for non-existent blog returns 404
+    let resp = client.get("/api/v1/blogs/nonexistent/stats").dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+}

@@ -59,6 +59,8 @@ fn rocket() -> _ {
             routes::search_posts,
             routes::preview_markdown,
             routes::blog_event_stream,
+            routes::related_posts,
+            routes::blog_stats,
         ])
         .mount("/", routes![routes::llms_txt])
         .mount("/", rocket::fs::FileServer::from(static_dir).rank(20))

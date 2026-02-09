@@ -72,6 +72,7 @@ pub struct PostResponse {
     pub comment_count: i64,
     pub word_count: u64,
     pub reading_time_minutes: u32,
+    pub view_count: i64,
 }
 
 fn compute_word_count(markdown: &str) -> u64 {
@@ -385,7 +386,8 @@ pub fn create_post(blog_id: &str, req: Json<CreatePostReq>, token: BlogToken, db
 fn query_post(conn: &rusqlite::Connection, post_id: &str) -> Result<PostResponse, (Status, Json<ApiError>)> {
     conn.query_row(
         "SELECT p.id, p.blog_id, p.title, p.slug, p.content, p.content_html, p.summary, p.tags, p.status, p.published_at, p.author_name, p.created_at, p.updated_at,
-                (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) as comment_count
+                (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) as comment_count,
+                (SELECT COUNT(*) FROM post_views v WHERE v.post_id = p.id) as view_count
          FROM posts p WHERE p.id = ?1",
         [post_id],
         |row| {
@@ -408,6 +410,7 @@ fn query_post(conn: &rusqlite::Connection, post_id: &str) -> Result<PostResponse
                 comment_count: row.get(13)?,
                 word_count: wc,
                 reading_time_minutes: compute_reading_time(wc),
+                view_count: row.get(14)?,
             })
         },
     ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))
@@ -424,7 +427,8 @@ pub fn list_posts(blog_id: &str, tag: Option<&str>, limit: Option<i64>, offset: 
 
     let mut sql = String::from(
         "SELECT p.id, p.blog_id, p.title, p.slug, p.content, p.content_html, p.summary, p.tags, p.status, p.published_at, p.author_name, p.created_at, p.updated_at,
-                (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) as comment_count
+                (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) as comment_count,
+                (SELECT COUNT(*) FROM post_views v WHERE v.post_id = p.id) as view_count
          FROM posts p WHERE p.blog_id = ?1"
     );
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(blog_id.to_string())];
@@ -470,6 +474,7 @@ pub fn list_posts(blog_id: &str, tag: Option<&str>, limit: Option<i64>, offset: 
             comment_count: row.get(13)?,
             word_count: wc,
             reading_time_minutes: compute_reading_time(wc),
+            view_count: row.get(14)?,
         })
     }).map_err(|e| db_err(&e.to_string()))?
     .filter_map(|r| r.ok())
@@ -479,11 +484,12 @@ pub fn list_posts(blog_id: &str, tag: Option<&str>, limit: Option<i64>, offset: 
 }
 
 #[get("/blogs/<blog_id>/posts/<slug>", rank = 2)]
-pub fn get_post_by_slug(blog_id: &str, slug: &str, db: &State<DbPool>) -> Result<Json<PostResponse>, (Status, Json<ApiError>)> {
+pub fn get_post_by_slug(blog_id: &str, slug: &str, client_ip: ClientIp, db: &State<DbPool>) -> Result<Json<PostResponse>, (Status, Json<ApiError>)> {
     let conn = db.lock().unwrap();
-    conn.query_row(
+    let post = conn.query_row(
         "SELECT p.id, p.blog_id, p.title, p.slug, p.content, p.content_html, p.summary, p.tags, p.status, p.published_at, p.author_name, p.created_at, p.updated_at,
-                (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) as comment_count
+                (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) as comment_count,
+                (SELECT COUNT(*) FROM post_views v WHERE v.post_id = p.id) as view_count
          FROM posts p WHERE p.blog_id = ?1 AND p.slug = ?2",
         rusqlite::params![blog_id, slug],
         |row| {
@@ -506,10 +512,18 @@ pub fn get_post_by_slug(blog_id: &str, slug: &str, db: &State<DbPool>) -> Result
                 comment_count: row.get(13)?,
                 word_count: wc,
                 reading_time_minutes: compute_reading_time(wc),
+                view_count: row.get(14)?,
             })
         },
-    ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))
-    .map(Json)
+    ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))?;
+
+    // Record view (fire-and-forget, don't fail the request if this errors)
+    let _ = conn.execute(
+        "INSERT INTO post_views (post_id, viewer_ip) VALUES (?1, ?2)",
+        rusqlite::params![post.id, client_ip.0],
+    );
+
+    Ok(Json(post))
 }
 
 #[patch("/blogs/<blog_id>/posts/<post_id>", format = "json", data = "<req>")]
@@ -906,6 +920,109 @@ pub fn related_posts(blog_id: &str, post_id: &str, limit: Option<usize>, db: &St
     candidates.truncate(max_results);
 
     Ok(Json(candidates))
+}
+
+// ─── Blog Stats ───
+
+#[derive(Serialize)]
+pub struct BlogStats {
+    pub blog_id: String,
+    pub blog_name: String,
+    pub total_posts: i64,
+    pub published_posts: i64,
+    pub total_comments: i64,
+    pub total_views: i64,
+    pub views_24h: i64,
+    pub views_7d: i64,
+    pub views_30d: i64,
+    pub top_posts: Vec<PostViewSummary>,
+}
+
+#[derive(Serialize)]
+pub struct PostViewSummary {
+    pub id: String,
+    pub title: String,
+    pub slug: String,
+    pub view_count: i64,
+    pub comment_count: i64,
+}
+
+#[get("/blogs/<blog_id>/stats")]
+pub fn blog_stats(blog_id: &str, db: &State<DbPool>) -> Result<Json<BlogStats>, (Status, Json<ApiError>)> {
+    let conn = db.lock().unwrap();
+
+    let blog_name: String = conn.query_row(
+        "SELECT name FROM blogs WHERE id = ?1", [blog_id], |r| r.get(0),
+    ).map_err(|_| err(Status::NotFound, "Blog not found", "NOT_FOUND"))?;
+
+    let total_posts: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM posts WHERE blog_id = ?1", [blog_id], |r| r.get(0),
+    ).unwrap_or(0);
+
+    let published_posts: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM posts WHERE blog_id = ?1 AND status = 'published'", [blog_id], |r| r.get(0),
+    ).unwrap_or(0);
+
+    let total_comments: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM comments c JOIN posts p ON p.id = c.post_id WHERE p.blog_id = ?1",
+        [blog_id], |r| r.get(0),
+    ).unwrap_or(0);
+
+    let total_views: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM post_views v JOIN posts p ON p.id = v.post_id WHERE p.blog_id = ?1",
+        [blog_id], |r| r.get(0),
+    ).unwrap_or(0);
+
+    let views_24h: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM post_views v JOIN posts p ON p.id = v.post_id WHERE p.blog_id = ?1 AND v.viewed_at >= datetime('now', '-1 day')",
+        [blog_id], |r| r.get(0),
+    ).unwrap_or(0);
+
+    let views_7d: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM post_views v JOIN posts p ON p.id = v.post_id WHERE p.blog_id = ?1 AND v.viewed_at >= datetime('now', '-7 days')",
+        [blog_id], |r| r.get(0),
+    ).unwrap_or(0);
+
+    let views_30d: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM post_views v JOIN posts p ON p.id = v.post_id WHERE p.blog_id = ?1 AND v.viewed_at >= datetime('now', '-30 days')",
+        [blog_id], |r| r.get(0),
+    ).unwrap_or(0);
+
+    // Top 10 posts by views
+    let mut stmt = conn.prepare(
+        "SELECT p.id, p.title, p.slug,
+                (SELECT COUNT(*) FROM post_views v WHERE v.post_id = p.id) as vc,
+                (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) as cc
+         FROM posts p
+         WHERE p.blog_id = ?1 AND p.status = 'published'
+         ORDER BY vc DESC
+         LIMIT 10"
+    ).map_err(|e| db_err(&e.to_string()))?;
+
+    let top_posts = stmt.query_map([blog_id], |row| {
+        Ok(PostViewSummary {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            slug: row.get(2)?,
+            view_count: row.get(3)?,
+            comment_count: row.get(4)?,
+        })
+    }).map_err(|e| db_err(&e.to_string()))?
+    .filter_map(|r| r.ok())
+    .collect();
+
+    Ok(Json(BlogStats {
+        blog_id: blog_id.to_string(),
+        blog_name,
+        total_posts,
+        published_posts,
+        total_comments,
+        total_views,
+        views_24h,
+        views_7d,
+        views_30d,
+        top_posts,
+    }))
 }
 
 // ─── Preview ───

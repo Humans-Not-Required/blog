@@ -46,6 +46,17 @@ pub fn initialize(conn: &Connection) {
         CREATE INDEX IF NOT EXISTS idx_posts_slug ON posts(blog_id, slug);
         CREATE INDEX IF NOT EXISTS idx_posts_status ON posts(status);
         CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);
+
+        CREATE TABLE IF NOT EXISTS post_views (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+            viewer_ip TEXT DEFAULT '',
+            user_agent TEXT DEFAULT '',
+            viewed_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_post_views_post_id ON post_views(post_id);
+        CREATE INDEX IF NOT EXISTS idx_post_views_viewed_at ON post_views(viewed_at);
+        CREATE INDEX IF NOT EXISTS idx_post_views_composite ON post_views(post_id, viewed_at);
         ",
     )
     .expect("Failed to initialize database");
