@@ -682,6 +682,7 @@ function PostView({ blogId, slug, onNavigate }) {
   const [post, setPost] = useState(null);
   const [blog, setBlog] = useState(null);
   const [comments, setComments] = useState([]);
+  const [relatedPosts, setRelatedPosts] = useState([]);
   const [newComment, setNewComment] = useState('');
   const [commentAuthor, setCommentAuthor] = useState(getSavedAuthor());
   const [editing, setEditing] = useState(false);
@@ -704,6 +705,14 @@ function PostView({ blogId, slug, onNavigate }) {
     apiFetch(`/blogs/${blogId}`).then(setBlog).catch(console.error);
   }, [blogId]);
   useEffect(() => { loadComments(); }, [loadComments]);
+
+  // Load related posts
+  useEffect(() => {
+    if (!post?.id) return;
+    apiFetch(`/blogs/${blogId}/posts/${post.id}/related?limit=5`)
+      .then(setRelatedPosts)
+      .catch(() => setRelatedPosts([]));
+  }, [blogId, post?.id]);
 
   // SSE real-time updates
   useEffect(() => {
@@ -816,6 +825,42 @@ function PostView({ blogId, slug, onNavigate }) {
           dangerouslySetInnerHTML={{ __html: post.content_html }}
         />
       </article>
+
+      {relatedPosts.length > 0 && (
+        <div style={s.card}>
+          <h3 style={{ marginBottom: '16px' }}>Related Posts</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {relatedPosts.map(rp => (
+              <div
+                key={rp.id}
+                onClick={() => onNavigate('post', blogId, rp.slug)}
+                style={{
+                  padding: '12px 16px',
+                  background: 'rgba(30, 41, 59, 0.5)',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  transition: 'background 0.15s',
+                  borderLeft: '3px solid #3b82f6',
+                }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(51, 65, 85, 0.7)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'rgba(30, 41, 59, 0.5)'}
+              >
+                <div style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '4px', color: '#e2e8f0' }}>{rp.title}</div>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '0.8rem', color: '#94a3b8' }}>
+                  {rp.author_name && <span>{rp.author_name}</span>}
+                  {rp.published_at && <span>{formatDate(rp.published_at)}</span>}
+                  {rp.reading_time_minutes > 0 && <span>· {rp.reading_time_minutes} min read</span>}
+                </div>
+                {rp.tags.length > 0 && (
+                  <div style={{ marginTop: '6px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                    {rp.tags.map((t, i) => <span key={i} style={{ ...s.tag, fontSize: '0.7rem', padding: '1px 6px' }}>{t}</span>)}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div style={s.card}>
         <h3 style={{ marginBottom: '16px' }}>Comments ({comments.length})</h3>

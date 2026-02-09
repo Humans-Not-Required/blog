@@ -812,6 +812,102 @@ pub fn search_posts(q: &str, limit: Option<i64>, offset: Option<i64>, db: &State
     Ok(Json(results))
 }
 
+// ─── Related Posts ───
+
+#[derive(Serialize)]
+pub struct RelatedPost {
+    pub id: String,
+    pub title: String,
+    pub slug: String,
+    pub summary: String,
+    pub tags: Vec<String>,
+    pub author_name: String,
+    pub published_at: Option<String>,
+    pub reading_time_minutes: u32,
+    pub score: f64,
+}
+
+fn title_words(title: &str) -> std::collections::HashSet<String> {
+    static STOP_WORDS: &[&str] = &[
+        "a", "an", "the", "and", "or", "but", "in", "on", "at", "to", "for",
+        "of", "with", "by", "is", "it", "as", "be", "this", "that", "from",
+        "was", "are", "were", "been", "has", "have", "had", "not", "no", "do",
+        "does", "did", "will", "would", "can", "could", "should", "may", "might",
+        "i", "we", "you", "he", "she", "they", "my", "your", "how", "what",
+        "why", "when", "where", "which", "who",
+    ];
+    title
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.len() > 2 && !STOP_WORDS.contains(w))
+        .map(|w| w.to_string())
+        .collect()
+}
+
+#[get("/blogs/<blog_id>/posts/<post_id>/related?<limit>")]
+pub fn related_posts(blog_id: &str, post_id: &str, limit: Option<usize>, db: &State<DbPool>) -> Result<Json<Vec<RelatedPost>>, (Status, Json<ApiError>)> {
+    let conn = db.lock().unwrap();
+
+    // Get the source post
+    let (src_tags_str, src_title): (String, String) = conn.query_row(
+        "SELECT tags, title FROM posts WHERE id = ?1 AND blog_id = ?2",
+        rusqlite::params![post_id, blog_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))?;
+
+    let src_tags: Vec<String> = serde_json::from_str(&src_tags_str).unwrap_or_default();
+    let src_words = title_words(&src_title);
+    let max_results = limit.unwrap_or(5).clamp(1, 20);
+
+    // Get all other published posts in the same blog
+    let mut stmt = conn.prepare(
+        "SELECT id, title, slug, summary, tags, author_name, published_at, content
+         FROM posts
+         WHERE blog_id = ?1 AND id != ?2 AND status = 'published'
+         ORDER BY published_at DESC NULLS LAST"
+    ).map_err(|e| db_err(&e.to_string()))?;
+
+    let mut candidates: Vec<RelatedPost> = stmt.query_map(rusqlite::params![blog_id, post_id], |row| {
+        let id: String = row.get(0)?;
+        let title: String = row.get(1)?;
+        let slug: String = row.get(2)?;
+        let summary: String = row.get(3)?;
+        let tags_str: String = row.get(4)?;
+        let author_name: String = row.get(5)?;
+        let published_at: Option<String> = row.get(6)?;
+        let content: String = row.get(7)?;
+
+        let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+        let wc = compute_word_count(&content);
+
+        // Score: shared tags (3 pts each) + title word overlap (1 pt each)
+        let shared_tags = tags.iter().filter(|t| src_tags.contains(t)).count() as f64;
+        let candidate_words = title_words(&title);
+        let shared_words = src_words.intersection(&candidate_words).count() as f64;
+        let score = shared_tags * 3.0 + shared_words;
+
+        Ok(RelatedPost {
+            id,
+            title,
+            slug,
+            summary,
+            tags,
+            author_name,
+            published_at,
+            reading_time_minutes: compute_reading_time(wc),
+            score,
+        })
+    }).map_err(|e| db_err(&e.to_string()))?
+    .filter_map(|r| r.ok())
+    .filter(|p| p.score > 0.0)
+    .collect();
+
+    candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    candidates.truncate(max_results);
+
+    Ok(Json(candidates))
+}
+
 // ─── Preview ───
 
 #[derive(Deserialize)]

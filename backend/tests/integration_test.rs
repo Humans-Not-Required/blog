@@ -558,3 +558,64 @@ fn test_word_count_and_reading_time() {
     assert!(wc > 900, "Expected >900 words, got {}", wc);
     assert!(rt >= 5, "Expected >=5 min reading time for {} words, got {}", wc, rt);
 }
+
+#[test]
+fn test_related_posts() {
+    let client = test_client();
+
+    // Create blog
+    let resp = client.post("/api/v1/blogs").header(ContentType::JSON)
+        .body(r#"{"name":"Related Test"}"#).dispatch();
+    let blog: serde_json::Value = resp.into_json().unwrap();
+    let blog_id = blog["id"].as_str().unwrap();
+    let key = blog["manage_key"].as_str().unwrap();
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    // Create 3 published posts with overlapping tags
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title":"Rust Web Frameworks","content":"Content about Rust","tags":["rust","web","api"],"status":"published"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let post_a: serde_json::Value = resp.into_json().unwrap();
+    let post_a_id = post_a["id"].as_str().unwrap();
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title":"Building APIs in Rust","content":"More Rust content","tags":["rust","api"],"status":"published"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title":"Python for Data Science","content":"Python content","tags":["python","data"],"status":"published"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+
+    // Get related posts for post A (should find post B as most related via shared tags)
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/related", blog_id, post_a_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let related: Vec<serde_json::Value> = resp.into_json().unwrap();
+
+    // Post B shares "rust" + "api" tags (6 pts) + "rust" title word (1 pt) = 7+ pts
+    // Post C shares nothing = 0 pts (filtered out)
+    assert!(!related.is_empty(), "Should have at least 1 related post");
+    assert!(related[0]["score"].as_f64().unwrap() > 0.0);
+    assert!(related[0]["title"].as_str().unwrap().contains("Rust") || related[0]["title"].as_str().unwrap().contains("API"));
+
+    // Post with no tags should return empty related
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title":"Unique Standalone Post","content":"Nothing in common","tags":[],"status":"published"}"#)
+        .dispatch();
+    let solo: serde_json::Value = resp.into_json().unwrap();
+    let solo_id = solo["id"].as_str().unwrap();
+
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/related", blog_id, solo_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let related: Vec<serde_json::Value> = resp.into_json().unwrap();
+    // May have some results from title word overlap, but score should be low or empty
+    for r in &related {
+        assert!(r["score"].as_f64().unwrap() > 0.0);
+    }
+}
