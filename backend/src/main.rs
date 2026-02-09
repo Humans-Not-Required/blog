@@ -18,8 +18,14 @@ fn rocket() -> _ {
 
     let static_dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "static".to_string());
 
+    let cors = rocket_cors::CorsOptions::default()
+        .allowed_origins(rocket_cors::AllowedOrigins::all())
+        .to_cors()
+        .expect("CORS config");
+
     rocket::build()
         .manage(Mutex::new(conn))
+        .attach(cors)
         .mount("/api/v1", routes![
             routes::health,
             routes::create_blog,

@@ -8,8 +8,14 @@ pub mod auth;
 pub type DbPool = std::sync::Mutex<rusqlite::Connection>;
 
 pub fn create_rocket(conn: rusqlite::Connection) -> rocket::Rocket<rocket::Build> {
+    let cors = rocket_cors::CorsOptions::default()
+        .allowed_origins(rocket_cors::AllowedOrigins::all())
+        .to_cors()
+        .expect("CORS config");
+
     rocket::build()
         .manage(std::sync::Mutex::new(conn))
+        .attach(cors)
         .mount("/api/v1", routes![
             routes::health,
             routes::create_blog,
