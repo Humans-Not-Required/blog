@@ -502,3 +502,59 @@ fn test_openapi_json() {
     assert!(spec["paths"]["/blogs/{blogId}/posts"].is_object());
     assert!(spec["components"]["schemas"]["Post"].is_object());
 }
+
+#[test]
+fn test_word_count_and_reading_time() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Word Count Test");
+
+    // Create a post with known word count (~50 words)
+    let content = "This is a test post with some content. ".repeat(5); // ~40 words
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(serde_json::json!({
+            "title": "Word Count Test",
+            "content": content,
+            "status": "published"
+        }).to_string())
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert!(body["word_count"].as_u64().unwrap() > 0);
+    assert!(body["reading_time_minutes"].as_u64().unwrap() >= 1);
+
+    // Verify via get by slug
+    let slug = body["slug"].as_str().unwrap();
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}", blog_id, slug)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert!(body["word_count"].as_u64().unwrap() > 0);
+    assert_eq!(body["reading_time_minutes"].as_u64().unwrap(), 1); // ~40 words = 1 min
+
+    // Verify in list endpoint
+    let resp = client.get(format!("/api/v1/blogs/{}/posts", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts.len(), 1);
+    assert!(posts[0]["word_count"].as_u64().unwrap() > 0);
+    assert!(posts[0]["reading_time_minutes"].as_u64().unwrap() >= 1);
+
+    // Create a longer post (~1000 words = ~5 min reading time)
+    let long_content = "Lorem ipsum dolor sit amet consectetur adipiscing elit. ".repeat(180); // ~1080 words
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(serde_json::json!({
+            "title": "Long Post",
+            "content": long_content,
+            "status": "published"
+        }).to_string())
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let wc = body["word_count"].as_u64().unwrap();
+    let rt = body["reading_time_minutes"].as_u64().unwrap();
+    assert!(wc > 900, "Expected >900 words, got {}", wc);
+    assert!(rt >= 5, "Expected >=5 min reading time for {} words, got {}", wc, rt);
+}

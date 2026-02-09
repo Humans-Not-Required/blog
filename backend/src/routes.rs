@@ -70,6 +70,17 @@ pub struct PostResponse {
     pub created_at: String,
     pub updated_at: String,
     pub comment_count: i64,
+    pub word_count: u64,
+    pub reading_time_minutes: u32,
+}
+
+fn compute_word_count(markdown: &str) -> u64 {
+    markdown.split_whitespace().count() as u64
+}
+
+fn compute_reading_time(word_count: u64) -> u32 {
+    // 200 words per minute, minimum 1 minute
+    ((word_count as f64 / 200.0).ceil() as u32).max(1)
 }
 
 #[derive(Serialize)]
@@ -377,22 +388,28 @@ fn query_post(conn: &rusqlite::Connection, post_id: &str) -> Result<PostResponse
                 (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) as comment_count
          FROM posts p WHERE p.id = ?1",
         [post_id],
-        |row| Ok(PostResponse {
-            id: row.get(0)?,
-            blog_id: row.get(1)?,
-            title: row.get(2)?,
-            slug: row.get(3)?,
-            content: row.get(4)?,
-            content_html: row.get(5)?,
-            summary: row.get(6)?,
-            tags: serde_json::from_str(&row.get::<_, String>(7)?).unwrap_or_default(),
-            status: row.get(8)?,
-            published_at: row.get(9)?,
-            author_name: row.get(10)?,
-            created_at: row.get(11)?,
-            updated_at: row.get(12)?,
-            comment_count: row.get(13)?,
-        }),
+        |row| {
+            let content: String = row.get(4)?;
+            let wc = compute_word_count(&content);
+            Ok(PostResponse {
+                id: row.get(0)?,
+                blog_id: row.get(1)?,
+                title: row.get(2)?,
+                slug: row.get(3)?,
+                content,
+                content_html: row.get(5)?,
+                summary: row.get(6)?,
+                tags: serde_json::from_str(&row.get::<_, String>(7)?).unwrap_or_default(),
+                status: row.get(8)?,
+                published_at: row.get(9)?,
+                author_name: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+                comment_count: row.get(13)?,
+                word_count: wc,
+                reading_time_minutes: compute_reading_time(wc),
+            })
+        },
     ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))
 }
 
@@ -434,12 +451,14 @@ pub fn list_posts(blog_id: &str, tag: Option<&str>, limit: Option<i64>, offset: 
     let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
 
     let posts = stmt.query_map(param_refs.as_slice(), |row| {
+        let content: String = row.get(4)?;
+        let wc = compute_word_count(&content);
         Ok(PostResponse {
             id: row.get(0)?,
             blog_id: row.get(1)?,
             title: row.get(2)?,
             slug: row.get(3)?,
-            content: row.get(4)?,
+            content,
             content_html: row.get(5)?,
             summary: row.get(6)?,
             tags: serde_json::from_str(&row.get::<_, String>(7)?).unwrap_or_default(),
@@ -449,6 +468,8 @@ pub fn list_posts(blog_id: &str, tag: Option<&str>, limit: Option<i64>, offset: 
             created_at: row.get(11)?,
             updated_at: row.get(12)?,
             comment_count: row.get(13)?,
+            word_count: wc,
+            reading_time_minutes: compute_reading_time(wc),
         })
     }).map_err(|e| db_err(&e.to_string()))?
     .filter_map(|r| r.ok())
@@ -465,22 +486,28 @@ pub fn get_post_by_slug(blog_id: &str, slug: &str, db: &State<DbPool>) -> Result
                 (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) as comment_count
          FROM posts p WHERE p.blog_id = ?1 AND p.slug = ?2",
         rusqlite::params![blog_id, slug],
-        |row| Ok(PostResponse {
-            id: row.get(0)?,
-            blog_id: row.get(1)?,
-            title: row.get(2)?,
-            slug: row.get(3)?,
-            content: row.get(4)?,
-            content_html: row.get(5)?,
-            summary: row.get(6)?,
-            tags: serde_json::from_str(&row.get::<_, String>(7)?).unwrap_or_default(),
-            status: row.get(8)?,
-            published_at: row.get(9)?,
-            author_name: row.get(10)?,
-            created_at: row.get(11)?,
-            updated_at: row.get(12)?,
-            comment_count: row.get(13)?,
-        }),
+        |row| {
+            let content: String = row.get(4)?;
+            let wc = compute_word_count(&content);
+            Ok(PostResponse {
+                id: row.get(0)?,
+                blog_id: row.get(1)?,
+                title: row.get(2)?,
+                slug: row.get(3)?,
+                content,
+                content_html: row.get(5)?,
+                summary: row.get(6)?,
+                tags: serde_json::from_str(&row.get::<_, String>(7)?).unwrap_or_default(),
+                status: row.get(8)?,
+                published_at: row.get(9)?,
+                author_name: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
+                comment_count: row.get(13)?,
+                word_count: wc,
+                reading_time_minutes: compute_reading_time(wc),
+            })
+        },
     ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))
     .map(Json)
 }

@@ -519,6 +519,7 @@ function BlogView({ blogId, onNavigate }) {
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', ...s.muted, fontSize: '0.8rem' }}>
                 {p.author_name && <span>{p.author_name}</span>}
                 <span>{formatDate(p.created_at)}</span>
+                {p.reading_time_minutes > 0 && <span>· {p.reading_time_minutes} min read</span>}
               </div>
             </HoverCard>
           ))}
@@ -536,6 +537,7 @@ function BlogView({ blogId, onNavigate }) {
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '4px', ...s.muted, fontSize: '0.8rem' }}>
                 {p.author_name && <span>{p.author_name}</span>}
                 <span>{formatDate(p.published_at || p.created_at)}</span>
+                {p.reading_time_minutes > 0 && <span>· {p.reading_time_minutes} min read</span>}
                 {p.comment_count > 0 && <span>💬 {p.comment_count}</span>}
               </div>
               {p.summary && <p style={{ ...s.muted, lineHeight: 1.5 }}>{p.summary}</p>}
@@ -803,6 +805,8 @@ function PostView({ blogId, slug, onNavigate }) {
         <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center', ...s.muted, fontSize: '0.85rem' }}>
           {post.author_name && <span style={{ fontWeight: 500, color: '#cbd5e1' }}>{post.author_name}</span>}
           <span>{formatDate(post.published_at || post.created_at)}</span>
+          {post.reading_time_minutes > 0 && <span>· {post.reading_time_minutes} min read</span>}
+          {post.word_count > 0 && <span style={{ color: '#64748b' }}>({post.word_count.toLocaleString()} words)</span>}
           {post.status === 'draft' && <span style={s.badge()}>Draft</span>}
         </div>
         {post.tags.length > 0 && <div style={{ marginBottom: '16px' }}>{post.tags.map((t, i) => <span key={i} style={s.tag}>{t}</span>)}</div>}

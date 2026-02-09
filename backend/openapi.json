@@ -563,6 +563,8 @@
           "published_at": { "type": "string", "format": "date-time", "nullable": true },
           "author_name": { "type": "string" },
           "comment_count": { "type": "integer" },
+          "word_count": { "type": "integer", "description": "Number of words in the markdown content" },
+          "reading_time_minutes": { "type": "integer", "description": "Estimated reading time in minutes (200 wpm)" },
           "created_at": { "type": "string", "format": "date-time" },
           "updated_at": { "type": "string", "format": "date-time" }
         }
