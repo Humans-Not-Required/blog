@@ -43,6 +43,34 @@ function saveAuthor(name) {
   if (name.trim()) localStorage.setItem('hnr_blog_author', name.trim());
 }
 
+// ─── My Blogs (localStorage) ───
+
+function getMyBlogs() {
+  try { return JSON.parse(localStorage.getItem('hnr_my_blogs') || '[]'); }
+  catch { return []; }
+}
+
+function addMyBlog(id, name) {
+  const blogs = getMyBlogs().filter(b => b.id !== id);
+  const hasKey = !!localStorage.getItem(`blog_key_${id}`);
+  blogs.unshift({ id, name, hasKey, addedAt: Date.now() });
+  localStorage.setItem('hnr_my_blogs', JSON.stringify(blogs));
+}
+
+function removeMyBlog(id) {
+  const blogs = getMyBlogs().filter(b => b.id !== id);
+  localStorage.setItem('hnr_my_blogs', JSON.stringify(blogs));
+}
+
+function refreshMyBlogKeys() {
+  const blogs = getMyBlogs().map(b => ({
+    ...b,
+    hasKey: !!localStorage.getItem(`blog_key_${b.id}`),
+  }));
+  localStorage.setItem('hnr_my_blogs', JSON.stringify(blogs));
+  return blogs;
+}
+
 function formatDate(dateStr) {
   if (!dateStr) return '';
   const d = new Date(dateStr);
@@ -197,6 +225,7 @@ function Home({ onNavigate }) {
   const [blogUrl, setBlogUrl] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState(null);
+  const [myBlogs, setMyBlogs] = useState(() => refreshMyBlogKeys());
   const [searching, setSearching] = useState(false);
 
   useEffect(() => { apiFetch('/blogs').then(setBlogs).catch(console.error); }, []);
@@ -274,6 +303,31 @@ function Home({ onNavigate }) {
         </div>
       )}
 
+      {myBlogs.length > 0 && (
+        <div style={{ marginBottom: '24px' }}>
+          <h2 style={{ fontSize: '1.2rem', marginBottom: '12px' }}>My Blogs</h2>
+          {myBlogs.map(b => (
+            <HoverCard key={b.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, cursor: 'pointer', minWidth: 0 }} onClick={() => onNavigate('blog', b.id)}>
+                <span title={b.hasKey ? 'Full Access' : 'View Only'} style={{ fontSize: '0.9rem', flexShrink: 0 }}>
+                  {b.hasKey ? '✏️' : '👁'}
+                </span>
+                <span style={{ fontSize: '1rem', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {b.name || b.id.slice(0, 8) + '…'}
+                </span>
+              </div>
+              <button
+                title="Remove from My Blogs"
+                onClick={(e) => { e.stopPropagation(); removeMyBlog(b.id); setMyBlogs(getMyBlogs()); }}
+                style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '0.85rem', padding: '4px 6px', borderRadius: '4px', flexShrink: 0, transition: 'color 0.15s' }}
+                onMouseEnter={e => e.target.style.color = '#ef4444'}
+                onMouseLeave={e => e.target.style.color = '#64748b'}
+              >✕</button>
+            </HoverCard>
+          ))}
+        </div>
+      )}
+
       {blogs.length > 0 && (
         <>
           <h2 style={{ fontSize: '1.2rem', marginBottom: '12px' }}>Public Blogs</h2>
@@ -286,7 +340,7 @@ function Home({ onNavigate }) {
         </>
       )}
 
-      {blogs.length === 0 && !searchResults && (
+      {blogs.length === 0 && myBlogs.length === 0 && !searchResults && (
         <div style={{ ...s.card, textAlign: 'center', padding: '40px 20px' }}>
           <p style={{ ...s.muted, marginBottom: '12px' }}>No public blogs yet.</p>
           <button style={s.btn(true)} onClick={() => onNavigate('create')}>Create the first one →</button>
@@ -310,6 +364,7 @@ function CreateBlog({ onNavigate }) {
     try {
       const data = await apiFetch('/blogs', { method: 'POST', body: { name, description: desc, is_public: isPublic } });
       localStorage.setItem(`blog_key_${data.id}`, data.manage_key);
+      addMyBlog(data.id, data.name);
       setResult(data);
     } catch (err) {
       alert(err.error || 'Failed to create blog');
@@ -397,7 +452,10 @@ function BlogView({ blogId, onNavigate }) {
   }, [blogId]);
 
   useEffect(() => {
-    apiFetch(`/blogs/${blogId}`).then(setBlog).catch(() => setBlog({ error: true }));
+    apiFetch(`/blogs/${blogId}`).then(b => {
+      setBlog(b);
+      if (b && b.name) addMyBlog(b.id, b.name);
+    }).catch(() => setBlog({ error: true }));
     refreshPosts();
   }, [blogId, refreshPosts]);
 
