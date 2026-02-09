@@ -69,4 +69,54 @@ pub fn initialize(conn: &Connection) {
         conn.execute_batch("ALTER TABLE posts ADD COLUMN is_pinned INTEGER DEFAULT 0;")
             .ok();
     }
+
+    // FTS5 full-text search index
+    conn.execute_batch(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS posts_fts USING fts5(
+            post_id UNINDEXED,
+            blog_id UNINDEXED,
+            title,
+            content,
+            tags,
+            summary,
+            author_name,
+            tokenize='porter unicode61'
+        );",
+    )
+    .expect("Failed to create FTS5 table");
+
+    // Rebuild FTS index from existing posts (idempotent — clears and repopulates)
+    rebuild_fts_index(conn);
+}
+
+/// Rebuild the FTS5 index from the posts table. Called on startup.
+pub fn rebuild_fts_index(conn: &Connection) {
+    conn.execute("DELETE FROM posts_fts", []).ok();
+    conn.execute_batch(
+        "INSERT INTO posts_fts (post_id, blog_id, title, content, tags, summary, author_name)
+         SELECT id, blog_id, title, content, tags, summary, author_name FROM posts
+         WHERE status = 'published';",
+    )
+    .ok();
+}
+
+/// Upsert a post into the FTS index (call after create/update/publish).
+pub fn upsert_fts(conn: &Connection, post_id: &str) {
+    // Remove old entry
+    conn.execute("DELETE FROM posts_fts WHERE post_id = ?1", [post_id])
+        .ok();
+    // Insert if published
+    conn.execute(
+        "INSERT INTO posts_fts (post_id, blog_id, title, content, tags, summary, author_name)
+         SELECT id, blog_id, title, content, tags, summary, author_name FROM posts
+         WHERE id = ?1 AND status = 'published'",
+        [post_id],
+    )
+    .ok();
+}
+
+/// Remove a post from the FTS index (call after delete).
+pub fn delete_fts(conn: &Connection, post_id: &str) {
+    conn.execute("DELETE FROM posts_fts WHERE post_id = ?1", [post_id])
+        .ok();
 }

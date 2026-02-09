@@ -413,6 +413,63 @@ fn test_search_posts() {
 }
 
 #[test]
+fn test_fts5_search_ranking_and_snippets() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "FTS Blog");
+
+    // Create multiple published posts with varying relevance
+    let posts = vec![
+        r#"{"title": "Advanced Database Optimization", "content": "SQLite FTS5 provides full-text search with BM25 ranking for database queries.", "tags": ["database", "sqlite"], "status": "published"}"#,
+        r#"{"title": "Web Development Basics", "content": "Building websites with HTML, CSS, and JavaScript for modern browsers.", "tags": ["web", "frontend"], "status": "published"}"#,
+        r#"{"title": "Database Design Patterns", "content": "Learn about database normalization, indexing strategies, and query optimization techniques for database performance.", "tags": ["database", "architecture"], "status": "published"}"#,
+    ];
+    for body in posts {
+        let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+            .header(ContentType::JSON)
+            .header(Header::new("Authorization", format!("Bearer {}", key)))
+            .body(body)
+            .dispatch();
+        assert_eq!(resp.status(), Status::Created);
+    }
+
+    // FTS search for "database" — should find 2 posts, ranked by relevance
+    let resp = client.get("/api/v1/search?q=database").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let results = body.as_array().unwrap();
+    assert_eq!(results.len(), 2);
+    // Both results should have rank (BM25 score) — rank is negative, closer to 0 = more relevant
+    assert!(results[0]["rank"].as_f64().is_some());
+    // Results should have snippet field
+    assert!(results[0].get("snippet").is_some());
+
+    // FTS search for "database optimization" — more specific query
+    let resp = client.get("/api/v1/search?q=database%20optimization").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let results = body.as_array().unwrap();
+    assert!(results.len() >= 2); // Both database posts match
+
+    // Search for non-existent term
+    let resp = client.get("/api/v1/search?q=kubernetes").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body.as_array().unwrap().len(), 0);
+
+    // Verify draft posts are NOT indexed — create a draft with searchable content
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Secret Draft About Kubernetes", "content": "Kubernetes orchestration secrets"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+
+    let resp = client.get("/api/v1/search?q=kubernetes").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body.as_array().unwrap().len(), 0, "Draft posts should not appear in FTS search");
+}
+
+#[test]
 fn test_blog_creation_rate_limit() {
     // BLOG_RATE_LIMIT defaults to 10
     std::env::set_var("BLOG_RATE_LIMIT", "3");

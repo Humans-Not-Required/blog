@@ -569,7 +569,7 @@
     "/search": {
       "get": {
         "summary": "Search published posts",
-        "description": "Searches title, content, tags, and author across all published posts.",
+        "description": "Full-text search using SQLite FTS5 with BM25 ranking and snippets. Falls back to LIKE search for invalid FTS queries. Supports porter stemming.",
         "operationId": "searchPosts",
         "tags": [
           "search"

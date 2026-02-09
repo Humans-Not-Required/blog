@@ -375,6 +375,9 @@ pub fn create_post(blog_id: &str, req: Json<CreatePostReq>, token: BlogToken, db
         }
     })?;
 
+    // Update FTS index
+    crate::db::upsert_fts(&conn, &id);
+
     let post = query_post(&conn, &id)?;
     bus.emit(crate::events::BlogEvent {
         event: "post.created".to_string(),
@@ -586,6 +589,9 @@ pub fn update_post(blog_id: &str, post_id: &str, req: Json<UpdatePostReq>, token
         }
     })?;
 
+    // Update FTS index
+    crate::db::upsert_fts(&conn, post_id);
+
     let post = query_post(&conn, post_id)?;
     bus.emit(crate::events::BlogEvent {
         event: "post.updated".to_string(),
@@ -600,8 +606,9 @@ pub fn delete_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<Db
     let conn = db.lock().unwrap();
     verify_blog_key(&conn, blog_id, &token)?;
 
-    // Delete comments first
+    // Delete comments first, then post views
     conn.execute("DELETE FROM comments WHERE post_id = ?1", [post_id]).ok();
+    conn.execute("DELETE FROM post_views WHERE post_id = ?1", [post_id]).ok();
     let deleted = conn.execute(
         "DELETE FROM posts WHERE id = ?1 AND blog_id = ?2",
         rusqlite::params![post_id, blog_id],
@@ -610,6 +617,10 @@ pub fn delete_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<Db
     if deleted == 0 {
         return Err(err(Status::NotFound, "Post not found", "NOT_FOUND"));
     }
+
+    // Remove from FTS index
+    crate::db::delete_fts(&conn, post_id);
+
     bus.emit(crate::events::BlogEvent {
         event: "post.deleted".to_string(),
         blog_id: blog_id.to_string(),
@@ -863,7 +874,7 @@ pub fn json_feed(blog_id: &str, db: &State<DbPool>) -> Result<Json<serde_json::V
     })))
 }
 
-// ─── Search ───
+// ─── Search (FTS5 full-text) ───
 
 #[derive(Serialize)]
 pub struct SearchResult {
@@ -876,6 +887,8 @@ pub struct SearchResult {
     pub tags: Vec<String>,
     pub author_name: String,
     pub published_at: Option<String>,
+    pub snippet: Option<String>,
+    pub rank: Option<f64>,
 }
 
 #[get("/search?<q>&<limit>&<offset>")]
@@ -884,36 +897,79 @@ pub fn search_posts(q: &str, limit: Option<i64>, offset: Option<i64>, db: &State
         return Err(err(Status::BadRequest, "Query parameter 'q' is required", "VALIDATION_ERROR"));
     }
     let conn = db.lock().unwrap();
-    let pattern = format!("%{}%", q.trim());
     let lim = limit.unwrap_or(20).clamp(1, 100);
     let off = offset.unwrap_or(0).max(0);
+    let query = q.trim().to_string();
 
-    let mut stmt = conn.prepare(
-        "SELECT p.id, p.blog_id, b.name, p.title, p.slug, p.summary, p.tags, p.author_name, p.published_at
-         FROM posts p JOIN blogs b ON b.id = p.blog_id
-         WHERE p.status = 'published'
-           AND (p.title LIKE ?1 OR p.content LIKE ?1 OR p.tags LIKE ?1 OR p.author_name LIKE ?1)
-         ORDER BY p.published_at DESC NULLS LAST
-         LIMIT ?2 OFFSET ?3"
-    ).map_err(|e| db_err(&e.to_string()))?;
+    // Try FTS5 first — falls back to LIKE if FTS fails (e.g. syntax error in query)
+    let fts_result: Result<Vec<SearchResult>, rusqlite::Error> = (|| {
+        let mut stmt = conn.prepare(
+            "SELECT f.post_id, f.blog_id, b.name, p.title, p.slug, p.summary, p.tags, p.author_name, p.published_at,
+                    snippet(posts_fts, 3, '<mark>', '</mark>', '…', 40) as snip,
+                    rank
+             FROM posts_fts f
+             JOIN posts p ON p.id = f.post_id
+             JOIN blogs b ON b.id = f.blog_id
+             WHERE posts_fts MATCH ?1
+             ORDER BY rank
+             LIMIT ?2 OFFSET ?3"
+        )?;
 
-    let results = stmt.query_map(rusqlite::params![pattern, lim, off], |row| {
-        Ok(SearchResult {
-            id: row.get(0)?,
-            blog_id: row.get(1)?,
-            blog_name: row.get(2)?,
-            title: row.get(3)?,
-            slug: row.get(4)?,
-            summary: row.get(5)?,
-            tags: serde_json::from_str(&row.get::<_, String>(6)?).unwrap_or_default(),
-            author_name: row.get(7)?,
-            published_at: row.get(8)?,
-        })
-    }).map_err(|e| db_err(&e.to_string()))?
-    .filter_map(|r| r.ok())
-    .collect();
+        let results: Vec<SearchResult> = stmt.query_map(rusqlite::params![query, lim, off], |row| {
+            Ok(SearchResult {
+                id: row.get(0)?,
+                blog_id: row.get(1)?,
+                blog_name: row.get(2)?,
+                title: row.get(3)?,
+                slug: row.get(4)?,
+                summary: row.get(5)?,
+                tags: serde_json::from_str(&row.get::<_, String>(6)?).unwrap_or_default(),
+                author_name: row.get(7)?,
+                published_at: row.get(8)?,
+                snippet: row.get(9)?,
+                rank: row.get(10)?,
+            })
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+        Ok(results)
+    })();
 
-    Ok(Json(results))
+    match fts_result {
+        Ok(results) => Ok(Json(results)),
+        Err(_) => {
+            // Fallback to LIKE search for invalid FTS queries
+            let pattern = format!("%{}%", query);
+            let mut stmt = conn.prepare(
+                "SELECT p.id, p.blog_id, b.name, p.title, p.slug, p.summary, p.tags, p.author_name, p.published_at
+                 FROM posts p JOIN blogs b ON b.id = p.blog_id
+                 WHERE p.status = 'published'
+                   AND (p.title LIKE ?1 OR p.content LIKE ?1 OR p.tags LIKE ?1 OR p.author_name LIKE ?1)
+                 ORDER BY p.published_at DESC NULLS LAST
+                 LIMIT ?2 OFFSET ?3"
+            ).map_err(|e| db_err(&e.to_string()))?;
+
+            let results = stmt.query_map(rusqlite::params![pattern, lim, off], |row| {
+                Ok(SearchResult {
+                    id: row.get(0)?,
+                    blog_id: row.get(1)?,
+                    blog_name: row.get(2)?,
+                    title: row.get(3)?,
+                    slug: row.get(4)?,
+                    summary: row.get(5)?,
+                    tags: serde_json::from_str(&row.get::<_, String>(6)?).unwrap_or_default(),
+                    author_name: row.get(7)?,
+                    published_at: row.get(8)?,
+                    snippet: None,
+                    rank: None,
+                })
+            }).map_err(|e| db_err(&e.to_string()))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+            Ok(Json(results))
+        }
+    }
 }
 
 // ─── Related Posts ───
