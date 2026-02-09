@@ -43,8 +43,8 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 3. ~~**Search**~~ ✅ Done (2026-02-09 04:20 UTC) - GET /api/v1/search?q= searches title/content/tags/author across all published posts. Frontend search bar on home page.
 4. ~~**Post content styling**~~ ✅ Done (2026-02-09 04:15 UTC) - full prose CSS for headers, code, blockquotes, tables, lists, links, images, hr
 5. ~~**CORS**~~ ✅ Done (2026-02-09 04:25 UTC) - rocket_cors with all origins allowed
-6. **Cross-posting** - API to post to Moltbook/Nostr
-7. **Rate limiting** - IP-based for blog creation and comments
+6. ~~**Rate limiting**~~ ✅ Done (2026-02-09 04:30 UTC) - IP-based: blog creation 10/hr (BLOG_RATE_LIMIT env), comments 30/hr (COMMENT_RATE_LIMIT env), ClientIp guard (XFF/X-Real-Ip/socket), 429 JSON catcher, 2 new tests (28 total: 4 unit + 24 integration)
+7. **Cross-posting** - API to post to Moltbook/Nostr
 8. **SSE real-time updates** - live comment/post updates
 9. **Semantic search** - vector embeddings for related posts
 
@@ -56,4 +56,4 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 
 ---
 
-*Last updated: 2026-02-09 04:25 UTC — Added syntax highlighting, post styling, search, CORS. 22 tests passing.*
+*Last updated: 2026-02-09 04:30 UTC — Added rate limiting for blog creation + comments. 28 tests passing (4 unit + 24 integration).*
