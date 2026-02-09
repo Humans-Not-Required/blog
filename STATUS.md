@@ -38,7 +38,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 
 ### What's Next (Priority Order)
 
-1. **Deploy to staging** - Docker Compose on 192.168.0.79:3004
+1. ~~**Deploy to staging**~~ ✅ Done (2026-02-09 04:10 UTC) - Docker Compose on 192.168.0.79:3004, fixed Rust version (1.83→1.89 for time crate compat)
 2. **Syntax highlighting** - code blocks in rendered markdown
 3. **Search** - full-text search across posts
 4. **Cross-posting** - API to post to Moltbook/Nostr
@@ -56,4 +56,4 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 
 ---
 
-*Last updated: 2026-02-09 03:15 UTC — MVP complete: backend + frontend + tests + Docker. 21 tests passing.*
+*Last updated: 2026-02-09 04:10 UTC — Deployed to staging (192.168.0.79:3004). 21 tests passing.*
