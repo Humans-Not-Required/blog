@@ -13,7 +13,8 @@ RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/li
 COPY backend/Cargo.toml backend/Cargo.lock* ./
 RUN mkdir src && echo 'fn main() {}' > src/main.rs && cargo build --release 2>/dev/null || true
 COPY backend/src ./src
-RUN cargo build --release
+COPY backend/openapi.json ./openapi.json
+RUN touch src/**/*.rs src/*.rs 2>/dev/null || true && cargo build --release
 
 # Stage 3: Runtime
 FROM debian:bookworm-slim
