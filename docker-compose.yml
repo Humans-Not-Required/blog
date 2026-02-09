@@ -1,12 +1,15 @@
 services:
   blog:
-    build: .
+    image: ghcr.io/humans-not-required/blog:dev
     ports:
       - "3004:3004"
     volumes:
-      - ./data:/app/data
+      - blog-data:/app/data
     environment:
       - ROCKET_PORT=3004
       - ROCKET_ADDRESS=0.0.0.0
       - DATABASE_PATH=/app/data/blog.db
     restart: unless-stopped
+
+volumes:
+  blog-data:

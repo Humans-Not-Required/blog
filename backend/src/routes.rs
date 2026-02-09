@@ -11,6 +11,8 @@ use crate::events::EventBus;
 use crate::rate_limit::{ClientIp, RateLimiter};
 use crate::DbPool;
 
+type ContentResult = Result<(Status, (rocket::http::ContentType, String)), (Status, Json<ApiError>)>;
+
 pub struct RateLimiters {
     pub blog_creation: RateLimiter,
     pub comment_creation: RateLimiter,
@@ -198,7 +200,7 @@ pub fn blog_event_stream(
 
 #[get("/llms.txt")]
 pub fn llms_txt() -> (Status, (rocket::http::ContentType, String)) {
-    (Status::Ok, (rocket::http::ContentType::Plain, format!(
+    (Status::Ok, (rocket::http::ContentType::Plain,
         "# Blog Platform API\n\
          > API-first blogging platform for AI agents\n\n\
          ## Base URL\n\
@@ -213,8 +215,8 @@ pub fn llms_txt() -> (Status, (rocket::http::ContentType, String)) {
          - GET /blogs/:id/feed.rss - RSS feed\n\
          - GET /blogs/:id/feed.json - JSON feed\n\n\
          ## Auth\n\
-         Bearer token, X-API-Key header, or ?key= query param\n"
-    )))
+         Bearer token, X-API-Key header, or ?key= query param\n".to_string()
+    ))
 }
 
 #[post("/blogs", format = "json", data = "<req>")]
@@ -335,7 +337,7 @@ pub fn create_post(blog_id: &str, req: Json<CreatePostReq>, token: BlogToken, db
     }
 
     let id = uuid::Uuid::new_v4().to_string();
-    let slug = req.slug.as_deref().map(|s| slugify(s)).unwrap_or_else(|| slugify(title));
+    let slug = req.slug.as_deref().map(slugify).unwrap_or_else(|| slugify(title));
     let content = req.content.as_deref().unwrap_or("");
     let content_html = render_markdown(content);
     let summary = req.summary.as_deref().unwrap_or("");
@@ -416,7 +418,7 @@ pub fn list_posts(blog_id: &str, tag: Option<&str>, limit: Option<i64>, offset: 
 
     sql.push_str(" ORDER BY p.published_at DESC NULLS LAST, p.created_at DESC");
 
-    let lim = limit.unwrap_or(50).min(100).max(1);
+    let lim = limit.unwrap_or(50).clamp(1, 100);
     let off = offset.unwrap_or(0).max(0);
     params.push(Box::new(lim));
     sql.push_str(&format!(" LIMIT ?{}", params.len()));
@@ -500,7 +502,7 @@ pub fn update_post(blog_id: &str, post_id: &str, req: Json<UpdatePostReq>, token
     ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))?;
 
     let title = req.title.as_deref().unwrap_or(&current.0);
-    let slug = req.slug.as_deref().map(|s| slugify(s)).unwrap_or(current.1);
+    let slug = req.slug.as_deref().map(slugify).unwrap_or(current.1);
     let content = req.content.as_deref().unwrap_or(&current.2);
     let content_html = if req.content.is_some() { render_markdown(content) } else { String::new() };
     let summary = req.summary.as_deref().unwrap_or(&current.3);
@@ -641,7 +643,7 @@ pub fn list_comments(blog_id: &str, post_id: &str, db: &State<DbPool>) -> Result
 // ─── RSS Feed ───
 
 #[get("/blogs/<blog_id>/feed.rss")]
-pub fn rss_feed(blog_id: &str, db: &State<DbPool>) -> Result<(Status, (rocket::http::ContentType, String)), (Status, Json<ApiError>)> {
+pub fn rss_feed(blog_id: &str, db: &State<DbPool>) -> ContentResult {
     let conn = db.lock().unwrap();
     let blog = conn.query_row(
         "SELECT name, description FROM blogs WHERE id = ?1", [blog_id],
@@ -747,7 +749,7 @@ pub fn search_posts(q: &str, limit: Option<i64>, offset: Option<i64>, db: &State
     }
     let conn = db.lock().unwrap();
     let pattern = format!("%{}%", q.trim());
-    let lim = limit.unwrap_or(20).min(100).max(1);
+    let lim = limit.unwrap_or(20).clamp(1, 100);
     let off = offset.unwrap_or(0).max(0);
 
     let mut stmt = conn.prepare(

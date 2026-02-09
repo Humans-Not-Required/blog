@@ -67,6 +67,7 @@ pub struct RateLimitResult {
     /// Whether the request is allowed.
     pub allowed: bool,
     /// Configured limit for this key.
+    #[allow(dead_code)]
     pub limit: u64,
     /// Requests remaining in the current window (used by headers fairing + tests).
     #[allow(dead_code)]

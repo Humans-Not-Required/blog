@@ -26,12 +26,10 @@ impl<'r> FromRequest<'r> for BlogToken {
             }
         }
         // 3. ?key= query param
-        if let Some(key) = req.query_value::<String>("key") {
-            if let Ok(key) = key {
-                let key = key.trim().to_string();
-                if !key.is_empty() {
-                    return Outcome::Success(BlogToken(key));
-                }
+        if let Some(Ok(key)) = req.query_value::<String>("key") {
+            let key = key.trim().to_string();
+            if !key.is_empty() {
+                return Outcome::Success(BlogToken(key));
             }
         }
         Outcome::Forward(rocket::http::Status::Unauthorized)
