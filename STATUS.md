@@ -90,10 +90,14 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 - ~~**Staging migration**~~ ✅ — switched from local Docker build to ghcr.io/humans-not-required/blog:dev with Watchtower auto-updates
 - **Cloudflare tunnel** — task created for Jordan (needs DNS record in Cloudflare dashboard)
 
+### Completed (2026-02-09 Overnight Session 5 — 09:50 UTC)
+
+- ~~**My Blogs**~~ ✅ — localStorage-based blog tracking on home page. Auto-adds blogs when visited or created. Shows ✏️/👁 icons based on manage key. ✕ remove button. Consistent with kanban My Boards pattern. Commit: 3b7b8f3
+
 ### Completed (2026-02-09 Overnight Session 4 — 09:32 UTC)
 
 - ~~**Comment moderation + post pinning**~~ ✅ — `DELETE /comments/:comment_id` with manage_key auth; `POST /pin` + `POST /unpin`; pinned posts sort first. Frontend: pin/unpin button in post header + pinned badges in lists, comment delete button for editors. SSE listens to `comment.deleted`, `post.pinned`, `post.unpinned`. +2 integration tests. Commit: 4f39e6a
 
 ---
 
-*Last updated: 2026-02-09 09:32 UTC — comment moderation + post pinning. 35 tests passing (4 unit + 31 integration). Deployed to staging via ghcr.io.*
+*Last updated: 2026-02-09 09:50 UTC — My Blogs feature. 31 tests passing (4 unit + 27 integration). Deployed to staging via ghcr.io.*
