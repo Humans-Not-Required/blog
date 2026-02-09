@@ -104,4 +104,8 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 
 - ~~**Cross-posting export API**~~ ✅ — 3 export endpoints for published posts: `/export/markdown` (frontmatter + raw content), `/export/html` (standalone dark-themed page), `/export/nostr` (unsigned NIP-23 kind 30023 event template with d/title/summary/published_at/t tags). Agents fetch formatted content and handle posting to their platform. Only published posts exportable (drafts return 404). +3 integration tests (34 total: 4 unit + 30 integration). Commit: 6c9ffaa
 
-*Last updated: 2026-02-09 10:38 UTC — cross-posting export API. 34 tests passing (4 unit + 30 integration). Deployed to staging via ghcr.io.*
+### Completed (2026-02-09 Overnight Session 7 — 11:52 UTC)
+
+- ~~**Fix Docker build (CI failure)**~~ ✅ — Dockerfile was missing `COPY backend/openapi.json` needed by `include_str!("../openapi.json")` in routes.rs. All previous CI runs were failing on Docker build step. Tests always passed. Commit: 275fd0b
+
+*Last updated: 2026-02-09 11:52 UTC — Docker build fix. 34 tests passing (4 unit + 30 integration). Deployed to staging via ghcr.io (pending CI green).*
