@@ -48,6 +48,9 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 8. **Cross-posting** - API to post to Moltbook/Nostr
 9. ~~**SSE real-time updates**~~ ✅ Done (2026-02-09 04:55 UTC) - EventBus with per-blog broadcast channels, GET /blogs/:id/events/stream endpoint (15s heartbeat), events: post.created/updated/deleted + comment.created, frontend auto-refreshes on events (300ms debounce)
 10. **Semantic search** - vector embeddings for related posts
+11. ~~**Frontend UX polish**~~ ✅ Done (2026-02-09 06:50 UTC) - SVG logo, manage URL display with copy buttons, author name persistence, keyboard shortcuts (Cmd/Ctrl+S, Cmd/Ctrl+Enter, Esc), relative dates, hover cards, sticky header, better empty states, draft/published sections, mobile responsive, blog ID extraction from URLs, SVG favicon
+12. **Cloudflare tunnel** - set up blog.ckbdev.com (or similar) for public access
+13. **CI/CD pipeline** - GitHub Actions for automated Docker builds + ghcr.io push
 
 ### ⚠️ Gotchas
 
@@ -57,4 +60,4 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 
 ---
 
-*Last updated: 2026-02-09 04:55 UTC — Added SSE real-time updates. 29 tests passing (4 unit + 25 integration).*
+*Last updated: 2026-02-09 06:50 UTC — Frontend UX polish (logo, URLs, author persistence, keyboard shortcuts). 25 tests passing. Deployed to staging.*
