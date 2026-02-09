@@ -388,6 +388,7 @@ function BlogView({ blogId, onNavigate }) {
   const [blog, setBlog] = useState(null);
   const [posts, setPosts] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [filterTag, setFilterTag] = useState(null);
   const manageKey = localStorage.getItem(`blog_key_${blogId}`);
   const canEdit = !!manageKey;
 
@@ -428,8 +429,13 @@ function BlogView({ blogId, onNavigate }) {
     </div>
   );
 
-  const publishedPosts = posts.filter(p => p.status === 'published');
-  const draftPosts = posts.filter(p => p.status === 'draft');
+  const allPublished = posts.filter(p => p.status === 'published');
+  const allDrafts = posts.filter(p => p.status === 'draft');
+  const publishedPosts = filterTag ? allPublished.filter(p => p.tags.includes(filterTag)) : allPublished;
+  const draftPosts = filterTag ? allDrafts.filter(p => p.tags.includes(filterTag)) : allDrafts;
+
+  // Collect all unique tags for the filter display
+  const allTags = [...new Set(posts.flatMap(p => p.tags))].sort();
 
   return (
     <div style={s.container}>
@@ -462,6 +468,36 @@ function BlogView({ blogId, onNavigate }) {
           onDone={() => { setShowCreate(false); refreshPosts(); }}
           onCancel={() => setShowCreate(false)}
         />
+      )}
+
+      {allTags.length > 0 && (
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '16px', alignItems: 'center' }}>
+          {filterTag && (
+            <button
+              onClick={() => setFilterTag(null)}
+              style={{ ...s.btnSmall(), background: '#334155', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: '4px' }}
+            >
+              ✕ Clear filter
+            </button>
+          )}
+          {allTags.map(t => (
+            <button
+              key={t}
+              onClick={() => setFilterTag(filterTag === t ? null : t)}
+              style={{
+                ...s.tag,
+                cursor: 'pointer',
+                border: 'none',
+                background: filterTag === t ? '#818cf8' : s.tag.background,
+                color: filterTag === t ? '#fff' : s.tag.color,
+                transition: 'background 0.15s, color 0.15s',
+              }}
+            >
+              {t}
+            </button>
+          ))}
+          {filterTag && <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{publishedPosts.length + draftPosts.length} result{publishedPosts.length + draftPosts.length !== 1 ? 's' : ''}</span>}
+        </div>
       )}
 
       {posts.length === 0 && !showCreate && (
@@ -503,7 +539,7 @@ function BlogView({ blogId, onNavigate }) {
                 {p.comment_count > 0 && <span>💬 {p.comment_count}</span>}
               </div>
               {p.summary && <p style={{ ...s.muted, lineHeight: 1.5 }}>{p.summary}</p>}
-              {p.tags.length > 0 && <div style={{ marginTop: '8px' }}>{p.tags.map((t, i) => <span key={i} style={s.tag}>{t}</span>)}</div>}
+              {p.tags.length > 0 && <div style={{ marginTop: '8px' }}>{p.tags.map((t, i) => <span key={i} onClick={(e) => { e.stopPropagation(); setFilterTag(filterTag === t ? null : t); }} style={{ ...s.tag, cursor: 'pointer', background: filterTag === t ? '#818cf8' : s.tag.background, color: filterTag === t ? '#fff' : s.tag.color }}>{t}</span>)}</div>}
             </HoverCard>
           ))}
         </>
