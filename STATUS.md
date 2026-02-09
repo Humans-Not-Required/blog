@@ -14,6 +14,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
   - Comments on published posts
   - RSS 2.0 and JSON Feed 1.1
   - /llms.txt for API discovery
+  - /api/v1/openapi.json — full OpenAPI 3.0.3 spec
   - JSON error catchers
 - **Frontend** - React + Vite SPA
   - Home page with public blog listing + direct blog ID input
@@ -60,7 +61,14 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 - Frontend needs `npm install` before build (node_modules not committed)
 - Staging uses ghcr.io image via Watchtower — do NOT use `docker compose up -d --build`
 
-### Completed (2026-02-09 Daytime — 07:30 UTC)
+### Completed (2026-02-09 Daytime Session 2 — 07:45 UTC)
+
+- ~~**OpenAPI 3.0 spec**~~ ✅ — GET /api/v1/openapi.json, covers all endpoints, schemas, auth model. 1 new test (26 total).
+- ~~**Tag filtering in blog view**~~ ✅ — clickable tag bar at top of posts, click to filter/toggle, active highlight, clear button, result count.
+- ~~**App directory listing**~~ ✅ — Blog Platform added to app directory (4 total apps).
+- ~~**App directory "empty DB" investigation**~~ ✅ — DB has 4 apps; issue was no Cloudflare tunnel for apps.ckbdev.com. Task moved to Review for Jordan.
+
+### Completed (2026-02-09 Daytime Session 1 — 07:30 UTC)
 
 - ~~**CI/CD pipeline**~~ ✅ — GitHub Actions: test + Docker build/push to ghcr.io
 - ~~**Clippy cleanup**~~ ✅ — zero warnings across all source files
@@ -69,4 +77,4 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 
 ---
 
-*Last updated: 2026-02-09 07:30 UTC — CI/CD pipeline + clippy cleanup + staging migration to ghcr.io. 25 tests passing. Deployed to staging via ghcr.io.*
+*Last updated: 2026-02-09 07:45 UTC — OpenAPI spec + tag filtering + app directory listing. 26 tests passing. Deployed to staging via ghcr.io.*
