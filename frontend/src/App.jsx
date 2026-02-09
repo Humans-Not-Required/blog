@@ -533,7 +533,7 @@ function BlogView({ blogId, onNavigate }) {
           )}
           {publishedPosts.map(p => (
             <HoverCard key={p.id} onClick={() => onNavigate('post', blogId, p.slug)}>
-              <h2 style={{ fontSize: '1.15rem', marginBottom: '4px' }}>{p.title}</h2>
+              <h2 style={{ fontSize: '1.15rem', marginBottom: '4px' }}>{p.is_pinned && <span title="Pinned" style={{ marginRight: '6px' }}>📌</span>}{p.title}</h2>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '4px', ...s.muted, fontSize: '0.8rem' }}>
                 {p.author_name && <span>{p.author_name}</span>}
                 <span>{formatDate(p.published_at || p.created_at)}</span>
@@ -721,15 +721,18 @@ function PostView({ blogId, slug, onNavigate }) {
     const handler = (e) => {
       clearTimeout(debounce);
       const data = JSON.parse(e.data);
-      if (e.type === 'comment.created' && post?.id && data.post_id === post.id) {
+      if ((e.type === 'comment.created' || e.type === 'comment.deleted') && post?.id && data.post_id === post.id) {
         debounce = setTimeout(loadComments, 300);
-      } else if (e.type === 'post.updated' || e.type === 'post.deleted') {
+      } else if (e.type === 'post.updated' || e.type === 'post.deleted' || e.type === 'post.pinned' || e.type === 'post.unpinned') {
         debounce = setTimeout(loadPost, 300);
       }
     };
     es.addEventListener('comment.created', handler);
+    es.addEventListener('comment.deleted', handler);
     es.addEventListener('post.updated', handler);
     es.addEventListener('post.deleted', handler);
+    es.addEventListener('post.pinned', handler);
+    es.addEventListener('post.unpinned', handler);
     return () => { clearTimeout(debounce); es.close(); };
   }, [blogId, post?.id, loadPost, loadComments]);
 
@@ -775,6 +778,26 @@ function PostView({ blogId, slug, onNavigate }) {
     }
   };
 
+  const handlePin = async () => {
+    try {
+      const endpoint = post.is_pinned ? 'unpin' : 'pin';
+      const updated = await apiFetch(`/blogs/${blogId}/posts/${post.id}/${endpoint}`, { method: 'POST' });
+      setPost(updated);
+    } catch (err) {
+      alert(err.error || 'Failed to update pin status');
+    }
+  };
+
+  const handleDeleteComment = async (commentId) => {
+    if (!confirm('Delete this comment?')) return;
+    try {
+      await apiFetch(`/blogs/${blogId}/posts/${post.id}/comments/${commentId}`, { method: 'DELETE' });
+      loadComments();
+    } catch (err) {
+      alert(err.error || 'Failed to delete comment');
+    }
+  };
+
   if (!post) return <div style={s.container}><p style={s.muted}>Loading...</p></div>;
   if (post.error) return (
     <div style={s.container}>
@@ -803,9 +826,13 @@ function PostView({ blogId, slug, onNavigate }) {
 
       <article style={s.card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-          <h1 style={{ fontSize: '1.8rem', marginBottom: '8px', flex: 1, lineHeight: 1.3 }}>{post.title}</h1>
+          <h1 style={{ fontSize: '1.8rem', marginBottom: '8px', flex: 1, lineHeight: 1.3 }}>
+            {post.is_pinned && <span title="Pinned" style={{ marginRight: '8px' }}>📌</span>}
+            {post.title}
+          </h1>
           {canEdit && (
             <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
+              <button style={s.btnSmall()} onClick={handlePin} title={post.is_pinned ? 'Unpin post' : 'Pin post'}>{post.is_pinned ? '📌' : '📍'}</button>
               <button style={s.btnSmall()} onClick={() => setEditing(true)} title="Edit post">✏️</button>
               <button style={{ ...s.btnSmall(), color: '#ef4444' }} onClick={handleDelete} title="Delete post">🗑️</button>
             </div>
@@ -873,7 +900,18 @@ function PostView({ blogId, slug, onNavigate }) {
           <div key={c.id} style={{ borderBottom: '1px solid #334155', padding: '12px 0' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <strong style={{ fontSize: '0.9rem', color: '#cbd5e1' }}>{c.author_name}</strong>
-              <span style={{ ...s.muted, fontSize: '0.8rem' }}>{formatDate(c.created_at)}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ ...s.muted, fontSize: '0.8rem' }}>{formatDate(c.created_at)}</span>
+                {canEdit && (
+                  <button
+                    onClick={() => handleDeleteComment(c.id)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', fontSize: '0.8rem', padding: '2px 4px', borderRadius: '4px', transition: 'color 0.15s' }}
+                    onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
+                    onMouseLeave={e => e.currentTarget.style.color = '#64748b'}
+                    title="Delete comment"
+                  >✕</button>
+                )}
+              </div>
             </div>
             <p style={{ marginTop: '6px', lineHeight: 1.6, color: '#e2e8f0' }}>{c.content}</p>
           </div>

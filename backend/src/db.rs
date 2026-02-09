@@ -60,4 +60,13 @@ pub fn initialize(conn: &Connection) {
         ",
     )
     .expect("Failed to initialize database");
+
+    // Migration: add is_pinned column to posts
+    let has_pinned: bool = conn
+        .prepare("SELECT is_pinned FROM posts LIMIT 0")
+        .is_ok();
+    if !has_pinned {
+        conn.execute_batch("ALTER TABLE posts ADD COLUMN is_pinned INTEGER DEFAULT 0;")
+            .ok();
+    }
 }

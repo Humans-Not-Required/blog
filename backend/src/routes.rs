@@ -73,6 +73,7 @@ pub struct PostResponse {
     pub word_count: u64,
     pub reading_time_minutes: u32,
     pub view_count: i64,
+    pub is_pinned: bool,
 }
 
 fn compute_word_count(markdown: &str) -> u64 {
@@ -387,7 +388,8 @@ fn query_post(conn: &rusqlite::Connection, post_id: &str) -> Result<PostResponse
     conn.query_row(
         "SELECT p.id, p.blog_id, p.title, p.slug, p.content, p.content_html, p.summary, p.tags, p.status, p.published_at, p.author_name, p.created_at, p.updated_at,
                 (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) as comment_count,
-                (SELECT COUNT(*) FROM post_views v WHERE v.post_id = p.id) as view_count
+                (SELECT COUNT(*) FROM post_views v WHERE v.post_id = p.id) as view_count,
+                COALESCE(p.is_pinned, 0) as is_pinned
          FROM posts p WHERE p.id = ?1",
         [post_id],
         |row| {
@@ -411,6 +413,7 @@ fn query_post(conn: &rusqlite::Connection, post_id: &str) -> Result<PostResponse
                 word_count: wc,
                 reading_time_minutes: compute_reading_time(wc),
                 view_count: row.get(14)?,
+                is_pinned: row.get::<_, i32>(15)? != 0,
             })
         },
     ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))
@@ -428,7 +431,8 @@ pub fn list_posts(blog_id: &str, tag: Option<&str>, limit: Option<i64>, offset: 
     let mut sql = String::from(
         "SELECT p.id, p.blog_id, p.title, p.slug, p.content, p.content_html, p.summary, p.tags, p.status, p.published_at, p.author_name, p.created_at, p.updated_at,
                 (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) as comment_count,
-                (SELECT COUNT(*) FROM post_views v WHERE v.post_id = p.id) as view_count
+                (SELECT COUNT(*) FROM post_views v WHERE v.post_id = p.id) as view_count,
+                COALESCE(p.is_pinned, 0) as is_pinned
          FROM posts p WHERE p.blog_id = ?1"
     );
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(blog_id.to_string())];
@@ -442,7 +446,7 @@ pub fn list_posts(blog_id: &str, tag: Option<&str>, limit: Option<i64>, offset: 
         sql.push_str(&format!(" AND p.tags LIKE ?{}", params.len()));
     }
 
-    sql.push_str(" ORDER BY p.published_at DESC NULLS LAST, p.created_at DESC");
+    sql.push_str(" ORDER BY COALESCE(p.is_pinned, 0) DESC, p.published_at DESC NULLS LAST, p.created_at DESC");
 
     let lim = limit.unwrap_or(50).clamp(1, 100);
     let off = offset.unwrap_or(0).max(0);
@@ -475,6 +479,7 @@ pub fn list_posts(blog_id: &str, tag: Option<&str>, limit: Option<i64>, offset: 
             word_count: wc,
             reading_time_minutes: compute_reading_time(wc),
             view_count: row.get(14)?,
+            is_pinned: row.get::<_, i32>(15)? != 0,
         })
     }).map_err(|e| db_err(&e.to_string()))?
     .filter_map(|r| r.ok())
@@ -489,7 +494,8 @@ pub fn get_post_by_slug(blog_id: &str, slug: &str, client_ip: ClientIp, db: &Sta
     let post = conn.query_row(
         "SELECT p.id, p.blog_id, p.title, p.slug, p.content, p.content_html, p.summary, p.tags, p.status, p.published_at, p.author_name, p.created_at, p.updated_at,
                 (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) as comment_count,
-                (SELECT COUNT(*) FROM post_views v WHERE v.post_id = p.id) as view_count
+                (SELECT COUNT(*) FROM post_views v WHERE v.post_id = p.id) as view_count,
+                COALESCE(p.is_pinned, 0) as is_pinned
          FROM posts p WHERE p.blog_id = ?1 AND p.slug = ?2",
         rusqlite::params![blog_id, slug],
         |row| {
@@ -513,6 +519,7 @@ pub fn get_post_by_slug(blog_id: &str, slug: &str, client_ip: ClientIp, db: &Sta
                 word_count: wc,
                 reading_time_minutes: compute_reading_time(wc),
                 view_count: row.get(14)?,
+                is_pinned: row.get::<_, i32>(15)? != 0,
             })
         },
     ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))?;
@@ -684,6 +691,89 @@ pub fn list_comments(blog_id: &str, post_id: &str, db: &State<DbPool>) -> Result
     .collect();
 
     Ok(Json(comments))
+}
+
+// ─── Comment Moderation ───
+
+#[delete("/blogs/<blog_id>/posts/<post_id>/comments/<comment_id>")]
+pub fn delete_comment(blog_id: &str, post_id: &str, comment_id: &str, token: BlogToken, db: &State<DbPool>, bus: &State<EventBus>) -> Result<Json<serde_json::Value>, (Status, Json<ApiError>)> {
+    let conn = db.lock().unwrap();
+    verify_blog_key(&conn, blog_id, &token)?;
+
+    // Verify post belongs to blog
+    conn.query_row(
+        "SELECT 1 FROM posts WHERE id = ?1 AND blog_id = ?2",
+        rusqlite::params![post_id, blog_id],
+        |_| Ok(()),
+    ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))?;
+
+    // Verify comment exists and belongs to post
+    let author: String = conn.query_row(
+        "SELECT author_name FROM comments WHERE id = ?1 AND post_id = ?2",
+        rusqlite::params![comment_id, post_id],
+        |row| row.get(0),
+    ).map_err(|_| err(Status::NotFound, "Comment not found", "NOT_FOUND"))?;
+
+    conn.execute("DELETE FROM comments WHERE id = ?1", [comment_id])
+        .map_err(|e| db_err(&e.to_string()))?;
+
+    bus.emit(crate::events::BlogEvent {
+        event: "comment.deleted".to_string(),
+        blog_id: blog_id.to_string(),
+        data: serde_json::json!({"post_id": post_id, "comment_id": comment_id, "author_name": author}),
+    });
+    Ok(Json(serde_json::json!({"deleted": true})))
+}
+
+// ─── Post Pinning ───
+
+#[post("/blogs/<blog_id>/posts/<post_id>/pin")]
+pub fn pin_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<DbPool>, bus: &State<EventBus>) -> Result<Json<PostResponse>, (Status, Json<ApiError>)> {
+    let conn = db.lock().unwrap();
+    verify_blog_key(&conn, blog_id, &token)?;
+
+    // Verify post exists and belongs to blog
+    conn.query_row(
+        "SELECT 1 FROM posts WHERE id = ?1 AND blog_id = ?2",
+        rusqlite::params![post_id, blog_id],
+        |_| Ok(()),
+    ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))?;
+
+    conn.execute(
+        "UPDATE posts SET is_pinned = 1, updated_at = datetime('now') WHERE id = ?1",
+        [post_id],
+    ).map_err(|e| db_err(&e.to_string()))?;
+
+    bus.emit(crate::events::BlogEvent {
+        event: "post.pinned".to_string(),
+        blog_id: blog_id.to_string(),
+        data: serde_json::json!({"post_id": post_id}),
+    });
+    query_post(&conn, post_id).map(Json)
+}
+
+#[post("/blogs/<blog_id>/posts/<post_id>/unpin")]
+pub fn unpin_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<DbPool>, bus: &State<EventBus>) -> Result<Json<PostResponse>, (Status, Json<ApiError>)> {
+    let conn = db.lock().unwrap();
+    verify_blog_key(&conn, blog_id, &token)?;
+
+    conn.query_row(
+        "SELECT 1 FROM posts WHERE id = ?1 AND blog_id = ?2",
+        rusqlite::params![post_id, blog_id],
+        |_| Ok(()),
+    ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))?;
+
+    conn.execute(
+        "UPDATE posts SET is_pinned = 0, updated_at = datetime('now') WHERE id = ?1",
+        [post_id],
+    ).map_err(|e| db_err(&e.to_string()))?;
+
+    bus.emit(crate::events::BlogEvent {
+        event: "post.unpinned".to_string(),
+        blog_id: blog_id.to_string(),
+        data: serde_json::json!({"post_id": post_id}),
+    });
+    query_post(&conn, post_id).map(Json)
 }
 
 // ─── RSS Feed ───

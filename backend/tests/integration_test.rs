@@ -679,3 +679,130 @@ fn test_blog_stats_and_view_tracking() {
     let resp = client.get("/api/v1/blogs/nonexistent/stats").dispatch();
     assert_eq!(resp.status(), Status::NotFound);
 }
+
+#[test]
+fn test_delete_comment() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Comment Del Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    // Create a published post
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON)
+        .header(auth.clone())
+        .body(r#"{"title": "Post For Comments", "status": "published"}"#)
+        .dispatch();
+    let post_id = resp.into_json::<serde_json::Value>().unwrap()["id"].as_str().unwrap().to_string();
+
+    // Add two comments
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/{}/comments", blog_id, post_id))
+        .header(ContentType::JSON)
+        .body(r#"{"author_name": "Alice", "content": "First comment"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let comment_id = resp.into_json::<serde_json::Value>().unwrap()["id"].as_str().unwrap().to_string();
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/{}/comments", blog_id, post_id))
+        .header(ContentType::JSON)
+        .body(r#"{"author_name": "Bob", "content": "Second comment"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+
+    // Verify 2 comments
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/comments", blog_id, post_id)).dispatch();
+    assert_eq!(resp.into_json::<serde_json::Value>().unwrap().as_array().unwrap().len(), 2);
+
+    // Delete without auth should fail (401)
+    let resp = client.delete(format!("/api/v1/blogs/{}/posts/{}/comments/{}", blog_id, post_id, comment_id)).dispatch();
+    assert_eq!(resp.status(), Status::Unauthorized);
+
+    // Delete with wrong key should fail
+    let bad_auth = Header::new("Authorization", "Bearer wrong_key");
+    let resp = client.delete(format!("/api/v1/blogs/{}/posts/{}/comments/{}", blog_id, post_id, comment_id))
+        .header(bad_auth)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Unauthorized);
+
+    // Delete with correct key should succeed
+    let resp = client.delete(format!("/api/v1/blogs/{}/posts/{}/comments/{}", blog_id, post_id, comment_id))
+        .header(auth.clone())
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["deleted"], true);
+
+    // Verify only 1 comment remains
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/comments", blog_id, post_id)).dispatch();
+    assert_eq!(resp.into_json::<serde_json::Value>().unwrap().as_array().unwrap().len(), 1);
+
+    // Delete non-existent comment should fail
+    let resp = client.delete(format!("/api/v1/blogs/{}/posts/{}/comments/nonexistent", blog_id, post_id))
+        .header(auth)
+        .dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+}
+
+#[test]
+fn test_pin_unpin_post() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Pin Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    // Create two published posts
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON)
+        .header(auth.clone())
+        .body(r#"{"title": "Normal Post", "status": "published", "content": "First"}"#)
+        .dispatch();
+    let post1_id = resp.into_json::<serde_json::Value>().unwrap()["id"].as_str().unwrap().to_string();
+
+    // Small delay to ensure different timestamps
+    std::thread::sleep(std::time::Duration::from_millis(10));
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON)
+        .header(auth.clone())
+        .body(r#"{"title": "Pinned Post", "status": "published", "content": "Second"}"#)
+        .dispatch();
+    let post2_id = resp.into_json::<serde_json::Value>().unwrap()["id"].as_str().unwrap().to_string();
+
+    // Initially, neither post is pinned
+    let resp = client.get(format!("/api/v1/blogs/{}/posts", blog_id)).dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts.len(), 2);
+    assert_eq!(posts[0]["is_pinned"], false);
+    assert_eq!(posts[1]["is_pinned"], false);
+
+    // Pin post1 (the older one)
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/{}/pin", blog_id, post1_id))
+        .header(auth.clone())
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["is_pinned"], true);
+
+    // List posts — pinned one should be first
+    let resp = client.get(format!("/api/v1/blogs/{}/posts", blog_id)).dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts[0]["id"].as_str().unwrap(), post1_id);
+    assert_eq!(posts[0]["is_pinned"], true);
+    assert_eq!(posts[1]["is_pinned"], false);
+
+    // Pin without auth should fail
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/{}/pin", blog_id, post2_id)).dispatch();
+    assert_eq!(resp.status(), Status::Unauthorized);
+
+    // Unpin
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/{}/unpin", blog_id, post1_id))
+        .header(auth.clone())
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["is_pinned"], false);
+
+    // Pin non-existent post should fail
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/nonexistent/pin", blog_id))
+        .header(auth)
+        .dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+}
