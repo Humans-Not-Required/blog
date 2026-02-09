@@ -44,6 +44,7 @@ pub fn create_rocket(conn: rusqlite::Connection) -> rocket::Rocket<rocket::Build
             routes::rss_feed,
             routes::json_feed,
             routes::search_posts,
+            routes::preview_markdown,
         ])
         .mount("/", routes![routes::llms_txt])
         .register("/", catchers![routes::not_found, routes::internal_error, routes::unauthorized, routes::too_many_requests])

@@ -719,6 +719,24 @@ pub fn search_posts(q: &str, limit: Option<i64>, offset: Option<i64>, db: &State
     Ok(Json(results))
 }
 
+// ─── Preview ───
+
+#[derive(Deserialize)]
+pub struct PreviewReq {
+    pub content: String,
+}
+
+#[derive(Serialize)]
+pub struct PreviewResponse {
+    pub html: String,
+}
+
+#[post("/preview", format = "json", data = "<req>")]
+pub fn preview_markdown(req: Json<PreviewReq>) -> Json<PreviewResponse> {
+    let html = render_markdown(&req.content);
+    Json(PreviewResponse { html })
+}
+
 // ─── Catchers ───
 
 #[catch(401)]

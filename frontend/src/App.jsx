@@ -258,6 +258,40 @@ function PostEditor({ blogId, post, onDone, onCancel }) {
   const [tags, setTags] = useState(post?.tags?.join(', ') || '');
   const [status, setStatus] = useState(post?.status || 'draft');
   const [authorName, setAuthorName] = useState(post?.author_name || '');
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  // Debounced preview - fetch rendered HTML when preview tab is active
+  useEffect(() => {
+    if (!showPreview || !content.trim()) {
+      setPreviewHtml('');
+      return;
+    }
+    setPreviewLoading(true);
+    const timer = setTimeout(() => {
+      fetch(`${API}/preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      })
+        .then(r => r.json())
+        .then(d => { setPreviewHtml(d.html); setPreviewLoading(false); })
+        .catch(() => setPreviewLoading(false));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [content, showPreview]);
+
+  // Highlight code blocks in preview
+  useEffect(() => {
+    if (previewHtml && window.hljs) {
+      setTimeout(() => {
+        document.querySelectorAll('.preview-content pre code').forEach(el => {
+          window.hljs.highlightElement(el);
+        });
+      }, 50);
+    }
+  }, [previewHtml]);
 
   const handleSave = async () => {
     try {
@@ -277,11 +311,38 @@ function PostEditor({ blogId, post, onDone, onCancel }) {
     }
   };
 
+  const tabStyle = (active) => ({
+    padding: '6px 16px', cursor: 'pointer', fontSize: '0.9rem', fontWeight: 500,
+    borderBottom: active ? '2px solid #3b82f6' : '2px solid transparent',
+    color: active ? '#e2e8f0' : '#94a3b8', background: 'none', border: 'none',
+    borderBottomWidth: '2px', borderBottomStyle: 'solid',
+    borderBottomColor: active ? '#3b82f6' : 'transparent',
+  });
+
   return (
     <div style={{ ...s.card, marginBottom: '16px' }}>
       <input style={s.input} placeholder="Post title" value={title} onChange={e => setTitle(e.target.value)} />
       <input style={s.input} placeholder="Author name" value={authorName} onChange={e => setAuthorName(e.target.value)} />
-      <textarea style={s.textarea} placeholder="Write your post in Markdown..." value={content} onChange={e => setContent(e.target.value)} />
+
+      <div style={{ display: 'flex', borderBottom: '1px solid #334155', marginBottom: '8px' }}>
+        <button style={tabStyle(!showPreview)} onClick={() => setShowPreview(false)}>Write</button>
+        <button style={tabStyle(showPreview)} onClick={() => setShowPreview(true)}>Preview</button>
+      </div>
+
+      {!showPreview ? (
+        <textarea style={s.textarea} placeholder="Write your post in Markdown..." value={content} onChange={e => setContent(e.target.value)} />
+      ) : (
+        <div style={{ ...s.textarea, minHeight: '200px', overflow: 'auto', fontFamily: 'inherit', lineHeight: 1.7 }} className="preview-content post-content">
+          {previewLoading ? (
+            <span style={s.muted}>Rendering preview...</span>
+          ) : previewHtml ? (
+            <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
+          ) : (
+            <span style={s.muted}>Nothing to preview</span>
+          )}
+        </div>
+      )}
+
       <input style={s.input} placeholder="Summary (optional)" value={summary} onChange={e => setSummary(e.target.value)} />
       <input style={s.input} placeholder="Tags (comma-separated)" value={tags} onChange={e => setTags(e.target.value)} />
       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px' }}>

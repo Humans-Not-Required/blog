@@ -473,3 +473,18 @@ fn test_comment_creation_rate_limit() {
 
     std::env::remove_var("COMMENT_RATE_LIMIT");
 }
+
+#[test]
+fn test_preview_markdown() {
+    let client = test_client();
+    let resp = client.post("/api/v1/preview")
+        .header(ContentType::JSON)
+        .body("{\"content\": \"# Hello\\n\\nThis is **bold** and *italic*.\"}")
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let html = body["html"].as_str().unwrap();
+    assert!(html.contains("<h1>"));
+    assert!(html.contains("<strong>"));
+    assert!(html.contains("<em>"));
+}
