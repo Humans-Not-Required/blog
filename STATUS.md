@@ -49,15 +49,24 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 9. ~~**SSE real-time updates**~~ ✅ Done (2026-02-09 04:55 UTC) - EventBus with per-blog broadcast channels, GET /blogs/:id/events/stream endpoint (15s heartbeat), events: post.created/updated/deleted + comment.created, frontend auto-refreshes on events (300ms debounce)
 10. **Semantic search** - vector embeddings for related posts
 11. ~~**Frontend UX polish**~~ ✅ Done (2026-02-09 06:50 UTC) - SVG logo, manage URL display with copy buttons, author name persistence, keyboard shortcuts (Cmd/Ctrl+S, Cmd/Ctrl+Enter, Esc), relative dates, hover cards, sticky header, better empty states, draft/published sections, mobile responsive, blog ID extraction from URLs, SVG favicon
-12. **Cloudflare tunnel** - set up blog.ckbdev.com (or similar) for public access
-13. **CI/CD pipeline** - GitHub Actions for automated Docker builds + ghcr.io push
+12. **Cloudflare tunnel** - set up blog.ckbdev.com — needs Jordan to add DNS record in Cloudflare dashboard (no cloudflared on staging, kanban uses proxied A record)
+13. ~~**CI/CD pipeline**~~ ✅ Done (2026-02-09 07:30 UTC) - GitHub Actions workflow: test (--test-threads=1) + Docker build/push to ghcr.io. Staging switched from local build to ghcr.io/humans-not-required/blog:dev with Watchtower auto-update label.
+14. ~~**Clippy cleanup**~~ ✅ Done (2026-02-09 07:25 UTC) - zero warnings: type alias, clamp(), redundant closures, collapsible match, dead_code suppression.
 
 ### ⚠️ Gotchas
 
 - `cargo` not on PATH by default - use `export PATH="$HOME/.cargo/bin:$PATH"`
 - Tests must run with `--test-threads=1` (shared in-memory DB)
 - Frontend needs `npm install` before build (node_modules not committed)
+- Staging uses ghcr.io image via Watchtower — do NOT use `docker compose up -d --build`
+
+### Completed (2026-02-09 Daytime — 07:30 UTC)
+
+- ~~**CI/CD pipeline**~~ ✅ — GitHub Actions: test + Docker build/push to ghcr.io
+- ~~**Clippy cleanup**~~ ✅ — zero warnings across all source files
+- ~~**Staging migration**~~ ✅ — switched from local Docker build to ghcr.io/humans-not-required/blog:dev with Watchtower auto-updates
+- **Cloudflare tunnel** — task created for Jordan (needs DNS record in Cloudflare dashboard)
 
 ---
 
-*Last updated: 2026-02-09 06:50 UTC — Frontend UX polish (logo, URLs, author persistence, keyboard shortcuts). 25 tests passing. Deployed to staging.*
+*Last updated: 2026-02-09 07:30 UTC — CI/CD pipeline + clippy cleanup + staging migration to ghcr.io. 25 tests passing. Deployed to staging via ghcr.io.*
