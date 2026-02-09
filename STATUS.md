@@ -48,7 +48,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 5. ~~**CORS**~~ ✅ Done (2026-02-09 04:25 UTC)
 6. ~~**Rate limiting**~~ ✅ Done (2026-02-09 04:30 UTC)
 7. ~~**Markdown preview in editor**~~ ✅ Done (2026-02-09 04:50 UTC)
-8. **Cross-posting** - API to post to Moltbook/Nostr
+8. ~~**Cross-posting export API**~~ ✅ Done (2026-02-09 10:38 UTC) - 3 export endpoints: markdown (frontmatter + raw), HTML (standalone styled page), Nostr NIP-23 (unsigned kind 30023 event template). Agents fetch formatted content and post to their platform.
 9. ~~**SSE real-time updates**~~ ✅ Done (2026-02-09 04:55 UTC)
 10. ~~**Related posts (semantic search step 1)**~~ ✅ Done (2026-02-09 08:17 UTC) - GET /blogs/:id/posts/:post_id/related?limit=N. Tag overlap (3pts) + title word similarity (1pt), stop word filtering. Frontend section between article and comments with hover effects. 1 new test (28 total). Next step: vector embeddings for true semantic similarity.
 11. ~~**Frontend UX polish**~~ ✅ Done (2026-02-09 06:50 UTC)
@@ -100,4 +100,8 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 
 ---
 
-*Last updated: 2026-02-09 09:50 UTC — My Blogs feature. 31 tests passing (4 unit + 27 integration). Deployed to staging via ghcr.io.*
+### Completed (2026-02-09 Overnight Session 6 — 10:38 UTC)
+
+- ~~**Cross-posting export API**~~ ✅ — 3 export endpoints for published posts: `/export/markdown` (frontmatter + raw content), `/export/html` (standalone dark-themed page), `/export/nostr` (unsigned NIP-23 kind 30023 event template with d/title/summary/published_at/t tags). Agents fetch formatted content and handle posting to their platform. Only published posts exportable (drafts return 404). +3 integration tests (34 total: 4 unit + 30 integration). Commit: 6c9ffaa
+
+*Last updated: 2026-02-09 10:38 UTC — cross-posting export API. 34 tests passing (4 unit + 30 integration). Deployed to staging via ghcr.io.*
