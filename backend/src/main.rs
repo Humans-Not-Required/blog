@@ -6,7 +6,6 @@ use std::sync::Mutex;
 mod db;
 mod routes;
 mod auth;
-mod events;
 mod rate_limit;
 
 pub type DbPool = Mutex<rusqlite::Connection>;
@@ -38,7 +37,6 @@ fn rocket() -> _ {
             blog_creation: blog_limiter,
             comment_creation: comment_limiter,
         })
-        .manage(events::EventBus::new())
         .attach(cors)
         .mount("/api/v1", routes![
             routes::health,
@@ -61,7 +59,6 @@ fn rocket() -> _ {
             routes::json_feed,
             routes::search_posts,
             routes::preview_markdown,
-            routes::blog_event_stream,
             routes::related_posts,
             routes::blog_stats,
             routes::export_markdown,

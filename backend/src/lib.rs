@@ -4,7 +4,6 @@ extern crate rocket;
 pub mod db;
 pub mod routes;
 pub mod auth;
-pub mod events;
 pub mod rate_limit;
 
 pub type DbPool = std::sync::Mutex<rusqlite::Connection>;
@@ -28,7 +27,6 @@ pub fn create_rocket(conn: rusqlite::Connection) -> rocket::Rocket<rocket::Build
             blog_creation: blog_limiter,
             comment_creation: comment_limiter,
         })
-        .manage(events::EventBus::new())
         .attach(cors)
         .mount("/api/v1", routes![
             routes::health,
@@ -51,7 +49,6 @@ pub fn create_rocket(conn: rusqlite::Connection) -> rocket::Rocket<rocket::Build
             routes::json_feed,
             routes::search_posts,
             routes::preview_markdown,
-            routes::blog_event_stream,
             routes::related_posts,
             routes::blog_stats,
             routes::export_markdown,

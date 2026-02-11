@@ -459,20 +459,6 @@ function BlogView({ blogId, onNavigate }) {
     refreshPosts();
   }, [blogId, refreshPosts]);
 
-  // SSE real-time updates
-  useEffect(() => {
-    const es = new EventSource(`${API}/blogs/${blogId}/events/stream`);
-    let debounce = null;
-    const handler = () => {
-      clearTimeout(debounce);
-      debounce = setTimeout(refreshPosts, 300);
-    };
-    es.addEventListener('post.created', handler);
-    es.addEventListener('post.updated', handler);
-    es.addEventListener('post.deleted', handler);
-    return () => { clearTimeout(debounce); es.close(); };
-  }, [blogId, refreshPosts]);
-
   useEscapeKey(useCallback(() => {
     if (showCreate) setShowCreate(false);
   }, [showCreate]));
@@ -771,28 +757,6 @@ function PostView({ blogId, slug, onNavigate }) {
       .then(setRelatedPosts)
       .catch(() => setRelatedPosts([]));
   }, [blogId, post?.id]);
-
-  // SSE real-time updates
-  useEffect(() => {
-    const es = new EventSource(`${API}/blogs/${blogId}/events/stream`);
-    let debounce = null;
-    const handler = (e) => {
-      clearTimeout(debounce);
-      const data = JSON.parse(e.data);
-      if ((e.type === 'comment.created' || e.type === 'comment.deleted') && post?.id && data.post_id === post.id) {
-        debounce = setTimeout(loadComments, 300);
-      } else if (e.type === 'post.updated' || e.type === 'post.deleted' || e.type === 'post.pinned' || e.type === 'post.unpinned') {
-        debounce = setTimeout(loadPost, 300);
-      }
-    };
-    es.addEventListener('comment.created', handler);
-    es.addEventListener('comment.deleted', handler);
-    es.addEventListener('post.updated', handler);
-    es.addEventListener('post.deleted', handler);
-    es.addEventListener('post.pinned', handler);
-    es.addEventListener('post.unpinned', handler);
-    return () => { clearTimeout(debounce); es.close(); };
-  }, [blogId, post?.id, loadPost, loadComments]);
 
   useEffect(() => {
     if (post?.content_html && window.hljs) {

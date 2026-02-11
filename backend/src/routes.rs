@@ -1,13 +1,9 @@
 use rocket::serde::json::Json;
 use rocket::http::Status;
-use rocket::response::stream::{Event, EventStream};
-use rocket::tokio::select;
-use rocket::{Shutdown, State};
+use rocket::State;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 
 use crate::auth::{BlogToken, generate_key, hash_key};
-use crate::events::EventBus;
 use crate::rate_limit::{ClientIp, RateLimiter};
 use crate::DbPool;
 
@@ -176,41 +172,6 @@ pub fn health() -> Json<serde_json::Value> {
     Json(serde_json::json!({"status": "ok", "version": "0.1.0"}))
 }
 
-// ─── SSE Event Stream ───
-
-#[get("/blogs/<blog_id>/events/stream")]
-pub fn blog_event_stream(
-    blog_id: &str,
-    db: &State<DbPool>,
-    bus: &State<EventBus>,
-    mut shutdown: Shutdown,
-) -> Result<EventStream![], (Status, Json<ApiError>)> {
-    let conn = db.lock().unwrap();
-    conn.query_row("SELECT 1 FROM blogs WHERE id = ?1", [blog_id], |_| Ok(()))
-        .map_err(|_| err(Status::NotFound, "Blog not found", "NOT_FOUND"))?;
-    drop(conn);
-
-    let mut rx = bus.subscribe(blog_id);
-
-    Ok(EventStream! {
-        loop {
-            select! {
-                msg = rx.recv() => match msg {
-                    Ok(event) => {
-                        yield Event::json(&event.data).event(event.event);
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                        yield Event::data("events_lost").event("warning".to_string());
-                    }
-                },
-                _ = &mut shutdown => break,
-            }
-        }
-    }
-    .heartbeat(Duration::from_secs(15)))
-}
-
 #[get("/openapi.json")]
 pub fn openapi() -> (rocket::http::ContentType, &'static str) {
     (rocket::http::ContentType::JSON, include_str!("../openapi.json"))
@@ -345,7 +306,7 @@ pub fn update_blog(blog_id: &str, req: Json<UpdateBlogReq>, token: BlogToken, db
 }
 
 #[post("/blogs/<blog_id>/posts", format = "json", data = "<req>")]
-pub fn create_post(blog_id: &str, req: Json<CreatePostReq>, token: BlogToken, db: &State<DbPool>, bus: &State<EventBus>) -> Result<(Status, Json<PostResponse>), (Status, Json<ApiError>)> {
+pub fn create_post(blog_id: &str, req: Json<CreatePostReq>, token: BlogToken, db: &State<DbPool>) -> Result<(Status, Json<PostResponse>), (Status, Json<ApiError>)> {
     let conn = db.lock().unwrap();
     verify_blog_key(&conn, blog_id, &token)?;
 
@@ -379,11 +340,6 @@ pub fn create_post(blog_id: &str, req: Json<CreatePostReq>, token: BlogToken, db
     crate::db::upsert_fts(&conn, &id);
 
     let post = query_post(&conn, &id)?;
-    bus.emit(crate::events::BlogEvent {
-        event: "post.created".to_string(),
-        blog_id: blog_id.to_string(),
-        data: serde_json::json!({"post_id": post.id, "title": post.title, "slug": post.slug, "status": post.status}),
-    });
     Ok((Status::Created, Json(post)))
 }
 
@@ -537,7 +493,7 @@ pub fn get_post_by_slug(blog_id: &str, slug: &str, client_ip: ClientIp, db: &Sta
 }
 
 #[patch("/blogs/<blog_id>/posts/<post_id>", format = "json", data = "<req>")]
-pub fn update_post(blog_id: &str, post_id: &str, req: Json<UpdatePostReq>, token: BlogToken, db: &State<DbPool>, bus: &State<EventBus>) -> Result<Json<PostResponse>, (Status, Json<ApiError>)> {
+pub fn update_post(blog_id: &str, post_id: &str, req: Json<UpdatePostReq>, token: BlogToken, db: &State<DbPool>) -> Result<Json<PostResponse>, (Status, Json<ApiError>)> {
     let conn = db.lock().unwrap();
     verify_blog_key(&conn, blog_id, &token)?;
 
@@ -593,16 +549,11 @@ pub fn update_post(blog_id: &str, post_id: &str, req: Json<UpdatePostReq>, token
     crate::db::upsert_fts(&conn, post_id);
 
     let post = query_post(&conn, post_id)?;
-    bus.emit(crate::events::BlogEvent {
-        event: "post.updated".to_string(),
-        blog_id: blog_id.to_string(),
-        data: serde_json::json!({"post_id": post.id, "title": post.title, "slug": post.slug, "status": post.status}),
-    });
     Ok(Json(post))
 }
 
 #[delete("/blogs/<blog_id>/posts/<post_id>")]
-pub fn delete_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<DbPool>, bus: &State<EventBus>) -> Result<Json<serde_json::Value>, (Status, Json<ApiError>)> {
+pub fn delete_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<DbPool>) -> Result<Json<serde_json::Value>, (Status, Json<ApiError>)> {
     let conn = db.lock().unwrap();
     verify_blog_key(&conn, blog_id, &token)?;
 
@@ -621,16 +572,11 @@ pub fn delete_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<Db
     // Remove from FTS index
     crate::db::delete_fts(&conn, post_id);
 
-    bus.emit(crate::events::BlogEvent {
-        event: "post.deleted".to_string(),
-        blog_id: blog_id.to_string(),
-        data: serde_json::json!({"post_id": post_id}),
-    });
     Ok(Json(serde_json::json!({"deleted": true})))
 }
 
 #[post("/blogs/<blog_id>/posts/<post_id>/comments", format = "json", data = "<req>")]
-pub fn create_comment(blog_id: &str, post_id: &str, req: Json<CreateCommentReq>, client_ip: ClientIp, limiters: &State<RateLimiters>, db: &State<DbPool>, bus: &State<EventBus>) -> Result<(Status, Json<CommentResponse>), (Status, Json<ApiError>)> {
+pub fn create_comment(blog_id: &str, post_id: &str, req: Json<CreateCommentReq>, client_ip: ClientIp, limiters: &State<RateLimiters>, db: &State<DbPool>) -> Result<(Status, Json<CommentResponse>), (Status, Json<ApiError>)> {
     let rl = limiters.comment_creation.check_default(&client_ip.0);
     if !rl.allowed {
         return Err(err(Status::TooManyRequests, &format!("Rate limit exceeded. Try again in {} seconds", rl.reset_secs), "RATE_LIMIT_EXCEEDED"));
@@ -667,11 +613,6 @@ pub fn create_comment(blog_id: &str, post_id: &str, req: Json<CreateCommentReq>,
         }),
     ).map_err(|e| db_err(&e.to_string()))?;
 
-    bus.emit(crate::events::BlogEvent {
-        event: "comment.created".to_string(),
-        blog_id: blog_id.to_string(),
-        data: serde_json::json!({"post_id": post_id, "comment_id": comment.id, "author_name": comment.author_name}),
-    });
     Ok((Status::Created, Json(comment)))
 }
 
@@ -707,7 +648,7 @@ pub fn list_comments(blog_id: &str, post_id: &str, db: &State<DbPool>) -> Result
 // ─── Comment Moderation ───
 
 #[delete("/blogs/<blog_id>/posts/<post_id>/comments/<comment_id>")]
-pub fn delete_comment(blog_id: &str, post_id: &str, comment_id: &str, token: BlogToken, db: &State<DbPool>, bus: &State<EventBus>) -> Result<Json<serde_json::Value>, (Status, Json<ApiError>)> {
+pub fn delete_comment(blog_id: &str, post_id: &str, comment_id: &str, token: BlogToken, db: &State<DbPool>) -> Result<Json<serde_json::Value>, (Status, Json<ApiError>)> {
     let conn = db.lock().unwrap();
     verify_blog_key(&conn, blog_id, &token)?;
 
@@ -719,27 +660,22 @@ pub fn delete_comment(blog_id: &str, post_id: &str, comment_id: &str, token: Blo
     ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))?;
 
     // Verify comment exists and belongs to post
-    let author: String = conn.query_row(
-        "SELECT author_name FROM comments WHERE id = ?1 AND post_id = ?2",
+    conn.query_row(
+        "SELECT 1 FROM comments WHERE id = ?1 AND post_id = ?2",
         rusqlite::params![comment_id, post_id],
-        |row| row.get(0),
+        |_| Ok(()),
     ).map_err(|_| err(Status::NotFound, "Comment not found", "NOT_FOUND"))?;
 
     conn.execute("DELETE FROM comments WHERE id = ?1", [comment_id])
         .map_err(|e| db_err(&e.to_string()))?;
 
-    bus.emit(crate::events::BlogEvent {
-        event: "comment.deleted".to_string(),
-        blog_id: blog_id.to_string(),
-        data: serde_json::json!({"post_id": post_id, "comment_id": comment_id, "author_name": author}),
-    });
     Ok(Json(serde_json::json!({"deleted": true})))
 }
 
 // ─── Post Pinning ───
 
 #[post("/blogs/<blog_id>/posts/<post_id>/pin")]
-pub fn pin_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<DbPool>, bus: &State<EventBus>) -> Result<Json<PostResponse>, (Status, Json<ApiError>)> {
+pub fn pin_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<DbPool>) -> Result<Json<PostResponse>, (Status, Json<ApiError>)> {
     let conn = db.lock().unwrap();
     verify_blog_key(&conn, blog_id, &token)?;
 
@@ -755,16 +691,11 @@ pub fn pin_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<DbPoo
         [post_id],
     ).map_err(|e| db_err(&e.to_string()))?;
 
-    bus.emit(crate::events::BlogEvent {
-        event: "post.pinned".to_string(),
-        blog_id: blog_id.to_string(),
-        data: serde_json::json!({"post_id": post_id}),
-    });
     query_post(&conn, post_id).map(Json)
 }
 
 #[post("/blogs/<blog_id>/posts/<post_id>/unpin")]
-pub fn unpin_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<DbPool>, bus: &State<EventBus>) -> Result<Json<PostResponse>, (Status, Json<ApiError>)> {
+pub fn unpin_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<DbPool>) -> Result<Json<PostResponse>, (Status, Json<ApiError>)> {
     let conn = db.lock().unwrap();
     verify_blog_key(&conn, blog_id, &token)?;
 
@@ -779,11 +710,6 @@ pub fn unpin_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<DbP
         [post_id],
     ).map_err(|e| db_err(&e.to_string()))?;
 
-    bus.emit(crate::events::BlogEvent {
-        event: "post.unpinned".to_string(),
-        blog_id: blog_id.to_string(),
-        data: serde_json::json!({"post_id": post_id}),
-    });
     query_post(&conn, post_id).map(Json)
 }
 
