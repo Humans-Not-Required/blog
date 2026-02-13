@@ -19,6 +19,12 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
   - /api/v1/openapi.json — full OpenAPI 3.0.3 spec
   - JSON error catchers
   - FTS5 full-text search with BM25 ranking, snippets, and porter stemming
+- **Semantic Search** - TF-IDF vectorization with cosine similarity
+  - GET /api/v1/search/semantic?q=&limit=&blog_id= endpoint
+  - In-memory TF-IDF index rebuilt on startup from published posts
+  - Auto-updated on post create/update/delete
+  - Simple stemmer + stop word filtering for better term matching
+  - find_similar() API ready for related posts enhancement
 - **Frontend** - React + Vite SPA
   - Home page with public blog listing + direct blog ID input
   - Blog creation with manage key display
@@ -28,7 +34,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
   - Client-side routing
   - Dark theme matching HNR design system
   - Auth key detection from URL (?key=) + localStorage persistence
-- **Tests** - 31 integration tests passing
+- **Tests** - 36 integration tests + 12 unit tests passing (48 total)
 - **Docker** - 3-stage multi-stage build
 - **Auth** - Bearer/X-API-Key/?key= (same as kanban)
 
@@ -53,7 +59,8 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 9. ~~**SSE real-time updates**~~ ✅ Done (2026-02-09 04:55 UTC) → **REMOVED** (2026-02-11 02:55 UTC) per Jordan's direction to simplify codebase
 10. ~~**Related posts (semantic search step 1)**~~ ✅ Done (2026-02-09 08:17 UTC) - GET /blogs/:id/posts/:post_id/related?limit=N. Tag overlap (3pts) + title word similarity (1pt), stop word filtering. Frontend section between article and comments with hover effects. 1 new test (28 total). Next step: vector embeddings for true semantic similarity.
 11. ~~**Frontend UX polish**~~ ✅ Done (2026-02-09 06:50 UTC)
-12. **Cloudflare tunnel** - set up blog.ckbdev.com — needs Jordan to add DNS record in Cloudflare dashboard
+12. ~~**Semantic search**~~ ✅ Done (2026-02-13 22:35 UTC) - TF-IDF + cosine similarity. New /search/semantic endpoint. In-memory index, auto-rebuilt on startup, updated on mutations. 12 unit tests + 1 integration test.
+13. **Cloudflare tunnel** - set up blog.ckbdev.com — needs Jordan to add DNS record in Cloudflare dashboard
    - **Jordan question (2026-02-13):** Viewable URL right now is LAN-only: http://192.168.0.79:3004 (staging). Public URL needs the Cloudflare DNS/tunnel record (blog.ckbdev.com).
 13. ~~**CI/CD pipeline**~~ ✅ Done (2026-02-09 07:30 UTC)
 14. ~~**Clippy cleanup**~~ ✅ Done (2026-02-09 07:25 UTC)
@@ -122,7 +129,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 
 - ~~**Remove SSE real-time updates**~~ ✅ — Removed EventBus, event stream endpoint (`/blogs/:id/events/stream`), all `bus.emit()` calls from mutation routes, frontend EventSource subscriptions, tokio sync dependency, and SSE references from OpenAPI spec. -208 lines of code. 35 tests pass, zero clippy warnings. Commit: 688660c
 
-*Last updated: 2026-02-11 02:55 UTC — SSE removed per Jordan's direction. 35 tests passing (4 unit + 31 integration). Deployed to staging via ghcr.io.*
+*Last updated: 2026-02-13 22:35 UTC — Semantic search added (TF-IDF + cosine similarity). 48 tests passing (12 unit + 36 integration). Deployed to staging via ghcr.io.*
 
 ## Incoming directions (2026-02-13T17:49:01Z)
 - Jordan: Cloudflare tunnel/DNS task being archived (he’s rolling out a more permanent solution). No action on my side for now. (task 8479e4ca)
