@@ -50,10 +50,11 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 6. ~~**Rate limiting**~~ ✅ Done (2026-02-09 04:30 UTC)
 7. ~~**Markdown preview in editor**~~ ✅ Done (2026-02-09 04:50 UTC)
 8. ~~**Cross-posting export API**~~ ✅ Done (2026-02-09 10:38 UTC) - 3 export endpoints: markdown (frontmatter + raw), HTML (standalone styled page), Nostr NIP-23 (unsigned kind 30023 event template). Agents fetch formatted content and post to their platform.
-9. ~~**SSE real-time updates**~~ ✅ Done (2026-02-09 04:55 UTC)
+9. ~~**SSE real-time updates**~~ ✅ Done (2026-02-09 04:55 UTC) → **REMOVED** (2026-02-11 02:55 UTC) per Jordan's direction to simplify codebase
 10. ~~**Related posts (semantic search step 1)**~~ ✅ Done (2026-02-09 08:17 UTC) - GET /blogs/:id/posts/:post_id/related?limit=N. Tag overlap (3pts) + title word similarity (1pt), stop word filtering. Frontend section between article and comments with hover effects. 1 new test (28 total). Next step: vector embeddings for true semantic similarity.
 11. ~~**Frontend UX polish**~~ ✅ Done (2026-02-09 06:50 UTC)
 12. **Cloudflare tunnel** - set up blog.ckbdev.com — needs Jordan to add DNS record in Cloudflare dashboard
+   - **Jordan question (2026-02-13):** Viewable URL right now is LAN-only: http://192.168.0.79:3004 (staging). Public URL needs the Cloudflare DNS/tunnel record (blog.ckbdev.com).
 13. ~~**CI/CD pipeline**~~ ✅ Done (2026-02-09 07:30 UTC)
 14. ~~**Clippy cleanup**~~ ✅ Done (2026-02-09 07:25 UTC)
 15. ~~**Post view tracking + blog stats**~~ ✅ Done (2026-02-09 08:50 UTC) - post_views table, view_count on all PostResponse fields, auto-recorded on GET by slug, GET /blogs/:id/stats with 24h/7d/30d views + top 10 posts. 1 new test (29 total). Also synced main.rs route mounts (related_posts was missing).
@@ -117,4 +118,13 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 
 - **HNR blog created + launch post published** ✅ — Created "Humans Not Required" public blog on staging. First post: "We Built Five Products in 48 Hours (No Humans Required)" — 623 words, pinned. Covers all 5 products, tech stack, auth model, and lessons learned. Blog ID: `0416e210-514a-49e0-9b24-16e1763debf0`, manage key: `blog_abb2455d72a74ec79f5b26e8a1e2a67b`.
 
-*Last updated: 2026-02-09 13:36 UTC — HNR blog with launch post. 35 tests passing (4 unit + 31 integration). Deployed to staging via ghcr.io.*
+### Completed (2026-02-11 — Daytime Session)
+
+- ~~**Remove SSE real-time updates**~~ ✅ — Removed EventBus, event stream endpoint (`/blogs/:id/events/stream`), all `bus.emit()` calls from mutation routes, frontend EventSource subscriptions, tokio sync dependency, and SSE references from OpenAPI spec. -208 lines of code. 35 tests pass, zero clippy warnings. Commit: 688660c
+
+*Last updated: 2026-02-11 02:55 UTC — SSE removed per Jordan's direction. 35 tests passing (4 unit + 31 integration). Deployed to staging via ghcr.io.*
+
+## Incoming directions (2026-02-13T17:49:01Z)
+- Jordan: Cloudflare tunnel/DNS task being archived (he’s rolling out a more permanent solution). No action on my side for now. (task 8479e4ca)
+- Jordan: Cross-posting export API — verify it’s documented somewhere (DESIGN.md/etc) before archiving/marking done. ✅ Verified: `DESIGN.md` has a dedicated “Cross-Posting Export API” section with the 3 endpoints + constraints. OK to archive. (2026-02-13T18:40:08Z; task_id: 68343bab-4e11-4772-9961-216225d1c841)
+- Jordan: SSE real-time updates — question was whether a blog needs real-time streaming. Resolved: SSE was removed on 2026-02-11 per direction; no further action unless it needs a cleanup/archival pass. (2026-02-13T18:40:08Z; task_id: 2f1fc78b-4252-427d-9f5c-e8a92ac16349)

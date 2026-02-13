@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::auth::{BlogToken, generate_key, hash_key};
 use crate::rate_limit::{ClientIp, RateLimiter};
+use crate::semantic::SemanticIndex;
 use crate::DbPool;
 
 type ContentResult = Result<(Status, (rocket::http::ContentType, String)), (Status, Json<ApiError>)>;
@@ -306,7 +307,7 @@ pub fn update_blog(blog_id: &str, req: Json<UpdateBlogReq>, token: BlogToken, db
 }
 
 #[post("/blogs/<blog_id>/posts", format = "json", data = "<req>")]
-pub fn create_post(blog_id: &str, req: Json<CreatePostReq>, token: BlogToken, db: &State<DbPool>) -> Result<(Status, Json<PostResponse>), (Status, Json<ApiError>)> {
+pub fn create_post(blog_id: &str, req: Json<CreatePostReq>, token: BlogToken, db: &State<DbPool>, sem: &State<SemanticIndex>) -> Result<(Status, Json<PostResponse>), (Status, Json<ApiError>)> {
     let conn = db.lock().unwrap();
     verify_blog_key(&conn, blog_id, &token)?;
 
@@ -336,8 +337,9 @@ pub fn create_post(blog_id: &str, req: Json<CreatePostReq>, token: BlogToken, db
         }
     })?;
 
-    // Update FTS index
+    // Update FTS + semantic index
     crate::db::upsert_fts(&conn, &id);
+    crate::db::upsert_semantic(&conn, &id, sem);
 
     let post = query_post(&conn, &id)?;
     Ok((Status::Created, Json(post)))
@@ -493,7 +495,7 @@ pub fn get_post_by_slug(blog_id: &str, slug: &str, client_ip: ClientIp, db: &Sta
 }
 
 #[patch("/blogs/<blog_id>/posts/<post_id>", format = "json", data = "<req>")]
-pub fn update_post(blog_id: &str, post_id: &str, req: Json<UpdatePostReq>, token: BlogToken, db: &State<DbPool>) -> Result<Json<PostResponse>, (Status, Json<ApiError>)> {
+pub fn update_post(blog_id: &str, post_id: &str, req: Json<UpdatePostReq>, token: BlogToken, db: &State<DbPool>, sem: &State<SemanticIndex>) -> Result<Json<PostResponse>, (Status, Json<ApiError>)> {
     let conn = db.lock().unwrap();
     verify_blog_key(&conn, blog_id, &token)?;
 
@@ -545,15 +547,16 @@ pub fn update_post(blog_id: &str, post_id: &str, req: Json<UpdatePostReq>, token
         }
     })?;
 
-    // Update FTS index
+    // Update FTS + semantic index
     crate::db::upsert_fts(&conn, post_id);
+    crate::db::upsert_semantic(&conn, post_id, sem);
 
     let post = query_post(&conn, post_id)?;
     Ok(Json(post))
 }
 
 #[delete("/blogs/<blog_id>/posts/<post_id>")]
-pub fn delete_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<DbPool>) -> Result<Json<serde_json::Value>, (Status, Json<ApiError>)> {
+pub fn delete_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<DbPool>, sem: &State<SemanticIndex>) -> Result<Json<serde_json::Value>, (Status, Json<ApiError>)> {
     let conn = db.lock().unwrap();
     verify_blog_key(&conn, blog_id, &token)?;
 
@@ -569,8 +572,9 @@ pub fn delete_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<Db
         return Err(err(Status::NotFound, "Post not found", "NOT_FOUND"));
     }
 
-    // Remove from FTS index
+    // Remove from FTS + semantic index
     crate::db::delete_fts(&conn, post_id);
+    crate::db::delete_semantic(post_id, sem);
 
     Ok(Json(serde_json::json!({"deleted": true})))
 }
@@ -896,6 +900,75 @@ pub fn search_posts(q: &str, limit: Option<i64>, offset: Option<i64>, db: &State
             Ok(Json(results))
         }
     }
+}
+
+// ─── Semantic Search (TF-IDF + Cosine Similarity) ───
+
+#[derive(Serialize)]
+pub struct SemanticResult {
+    pub id: String,
+    pub blog_id: String,
+    pub blog_name: String,
+    pub title: String,
+    pub slug: String,
+    pub summary: String,
+    pub tags: Vec<String>,
+    pub author_name: String,
+    pub published_at: Option<String>,
+    pub similarity: f64,
+}
+
+#[get("/search/semantic?<q>&<limit>&<blog_id>")]
+pub fn semantic_search(q: &str, limit: Option<usize>, blog_id: Option<&str>, db: &State<DbPool>, sem: &State<SemanticIndex>) -> Result<Json<Vec<SemanticResult>>, (Status, Json<ApiError>)> {
+    if q.trim().is_empty() {
+        return Err(err(Status::BadRequest, "Query parameter 'q' is required", "VALIDATION_ERROR"));
+    }
+    let lim = limit.unwrap_or(20).clamp(1, 100);
+
+    let hits = match blog_id {
+        Some(bid) => sem.search_blog(bid, q, lim),
+        None => sem.search(q, lim),
+    };
+
+    if hits.is_empty() {
+        return Ok(Json(Vec::new()));
+    }
+
+    let conn = db.lock().unwrap();
+    let mut results = Vec::new();
+    for hit in hits {
+        let row = conn.query_row(
+            "SELECT p.title, p.slug, p.summary, p.tags, p.author_name, p.published_at, b.name
+             FROM posts p JOIN blogs b ON b.id = p.blog_id
+             WHERE p.id = ?1 AND p.status = 'published'",
+            [&hit.post_id],
+            |row| Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, String>(6)?,
+            )),
+        );
+        if let Ok((title, slug, summary, tags_str, author_name, published_at, blog_name)) = row {
+            results.push(SemanticResult {
+                id: hit.post_id,
+                blog_id: hit.blog_id,
+                blog_name,
+                title,
+                slug,
+                summary,
+                tags: serde_json::from_str(&tags_str).unwrap_or_default(),
+                author_name,
+                published_at,
+                similarity: (hit.similarity * 1000.0).round() / 1000.0,
+            });
+        }
+    }
+
+    Ok(Json(results))
 }
 
 // ─── Related Posts ───

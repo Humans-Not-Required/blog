@@ -972,3 +972,78 @@ fn test_export_nostr() {
     assert_eq!(tags[1][1], "Nostr Post");
     assert!(body["note"].as_str().unwrap().contains("NIP-23"));
 }
+
+#[test]
+fn test_semantic_search() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Semantic Blog");
+
+    // Create diverse posts to test semantic matching
+    let posts = vec![
+        r#"{"title": "Machine Learning for Beginners", "content": "Neural networks and deep learning fundamentals. Understand backpropagation, gradient descent, and model training with practical examples.", "tags": ["ml", "ai", "deep-learning"], "status": "published"}"#,
+        r#"{"title": "Introduction to Artificial Intelligence", "content": "AI systems use neural networks, transformers, and reinforcement learning to solve complex problems. Deep learning powers modern AI.", "tags": ["ai", "neural-networks"], "status": "published"}"#,
+        r#"{"title": "Rust Web Development", "content": "Build high-performance web APIs with Rust using Rocket framework. Type safety, memory safety, and blazing fast execution.", "tags": ["rust", "web", "api"], "status": "published"}"#,
+        r#"{"title": "Italian Cooking Recipes", "content": "Traditional pasta recipes from Italy. Homemade sauce, fresh ingredients, and authentic flavors for your kitchen.", "tags": ["cooking", "food", "italian"], "status": "published"}"#,
+    ];
+    for body in posts {
+        let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+            .header(ContentType::JSON)
+            .header(Header::new("Authorization", format!("Bearer {}", key)))
+            .body(body)
+            .dispatch();
+        assert_eq!(resp.status(), Status::Created);
+    }
+
+    // Semantic search for "neural network AI" — should rank ML/AI posts highest
+    let resp = client.get("/api/v1/search/semantic?q=neural+network+AI").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let results = body.as_array().unwrap();
+    assert!(results.len() >= 2, "Should find at least 2 AI-related posts");
+    // Top results should be AI/ML posts, not cooking/Rust
+    let top_title = results[0]["title"].as_str().unwrap();
+    assert!(
+        top_title.contains("Machine Learning") || top_title.contains("Artificial Intelligence"),
+        "Top result should be ML or AI related, got: {}", top_title
+    );
+    // All results should have similarity scores
+    assert!(results[0]["similarity"].as_f64().unwrap() > 0.0);
+
+    // Semantic search filtered by blog_id
+    let resp = client.get(format!("/api/v1/search/semantic?q=cooking&blog_id={}", id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let results = body.as_array().unwrap();
+    assert!(!results.is_empty(), "Should find cooking post within blog");
+    assert_eq!(results[0]["title"], "Italian Cooking Recipes");
+
+    // Empty query should return error
+    let resp = client.get("/api/v1/search/semantic?q=").dispatch();
+    assert_eq!(resp.status(), Status::BadRequest);
+
+    // Query with no matches
+    let resp = client.get("/api/v1/search/semantic?q=quantum+physics+entanglement").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let results = body.as_array().unwrap();
+    // Should return empty or very low-similarity results
+    if !results.is_empty() {
+        assert!(results[0]["similarity"].as_f64().unwrap() < 0.3, "Unrelated query should have low similarity");
+    }
+
+    // Verify drafts are excluded from semantic search
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Secret AI Draft", "content": "Neural networks secret draft content about machine learning"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+
+    let resp = client.get("/api/v1/search/semantic?q=secret+draft+neural").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let results = body.as_array().unwrap();
+    // "secret draft" shouldn't appear — only the published AI posts should match on "neural"
+    for r in results {
+        assert_ne!(r["title"], "Secret AI Draft", "Draft posts must not appear in semantic search");
+    }
+}

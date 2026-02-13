@@ -1,4 +1,5 @@
 use rusqlite::Connection;
+use crate::semantic::{SemanticIndex, PostData};
 
 pub fn initialize(conn: &Connection) {
     conn.execute_batch("PRAGMA journal_mode=WAL;").ok();
@@ -119,4 +120,54 @@ pub fn upsert_fts(conn: &Connection, post_id: &str) {
 pub fn delete_fts(conn: &Connection, post_id: &str) {
     conn.execute("DELETE FROM posts_fts WHERE post_id = ?1", [post_id])
         .ok();
+}
+
+// ─── Semantic Index Helpers ───
+
+/// Rebuild the semantic TF-IDF index from all published posts. Called on startup.
+pub fn rebuild_semantic_index(conn: &Connection, index: &SemanticIndex) {
+    let mut stmt = conn.prepare(
+        "SELECT id, blog_id, title, content, tags, summary FROM posts WHERE status = 'published'"
+    ).expect("prepare semantic index query");
+
+    let posts: Vec<PostData> = stmt.query_map([], |row| {
+        Ok(PostData {
+            post_id: row.get(0)?,
+            blog_id: row.get(1)?,
+            title: row.get(2)?,
+            content: row.get(3)?,
+            tags: row.get(4)?,
+            summary: row.get(5)?,
+        })
+    }).expect("query semantic posts")
+    .filter_map(|r| r.ok())
+    .collect();
+
+    index.rebuild(posts);
+}
+
+/// Upsert a post into the semantic index. Call after create/update/publish.
+pub fn upsert_semantic(conn: &Connection, post_id: &str, index: &SemanticIndex) {
+    // Check if post exists and is published
+    let result = conn.query_row(
+        "SELECT id, blog_id, title, content, tags, summary FROM posts WHERE id = ?1 AND status = 'published'",
+        [post_id],
+        |row| Ok(PostData {
+            post_id: row.get(0)?,
+            blog_id: row.get(1)?,
+            title: row.get(2)?,
+            content: row.get(3)?,
+            tags: row.get(4)?,
+            summary: row.get(5)?,
+        }),
+    );
+    match result {
+        Ok(post) => index.upsert(post),
+        Err(_) => index.remove(post_id), // Not published — remove from index
+    }
+}
+
+/// Remove a post from the semantic index.
+pub fn delete_semantic(post_id: &str, index: &SemanticIndex) {
+    index.remove(post_id);
 }

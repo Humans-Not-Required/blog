@@ -5,6 +5,7 @@ pub mod db;
 pub mod routes;
 pub mod auth;
 pub mod rate_limit;
+pub mod semantic;
 
 pub type DbPool = std::sync::Mutex<rusqlite::Connection>;
 
@@ -21,8 +22,13 @@ pub fn create_rocket(conn: rusqlite::Connection) -> rocket::Rocket<rocket::Build
     let blog_limiter = rate_limit::RateLimiter::new(std::time::Duration::from_secs(3600), blog_limit);
     let comment_limiter = rate_limit::RateLimiter::new(std::time::Duration::from_secs(3600), comment_limit);
 
+    // Build semantic index from existing published posts
+    let sem_index = semantic::SemanticIndex::new();
+    db::rebuild_semantic_index(&conn, &sem_index);
+
     rocket::build()
         .manage(std::sync::Mutex::new(conn))
+        .manage(sem_index)
         .manage(routes::RateLimiters {
             blog_creation: blog_limiter,
             comment_creation: comment_limiter,
@@ -48,6 +54,7 @@ pub fn create_rocket(conn: rusqlite::Connection) -> rocket::Rocket<rocket::Build
             routes::rss_feed,
             routes::json_feed,
             routes::search_posts,
+            routes::semantic_search,
             routes::preview_markdown,
             routes::related_posts,
             routes::blog_stats,
