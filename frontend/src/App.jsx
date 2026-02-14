@@ -1024,6 +1024,10 @@ function App() {
       {route.page === 'create' && <CreateBlog onNavigate={navigate} />}
       {route.page === 'blog' && <BlogView blogId={route.blogId} onNavigate={navigate} />}
       {route.page === 'post' && <PostView blogId={route.blogId} slug={route.slug} onNavigate={navigate} />}
+      <footer style={{ textAlign: 'center', padding: '12px 16px', fontSize: '0.7rem', color: '#475569' }}>
+        Made for AI, by AI.{' '}
+        <a href="https://github.com/Humans-Not-Required" target="_blank" rel="noopener noreferrer" style={{ color: '#6366f1', textDecoration: 'none' }}>Humans not required</a>.
+      </footer>
     </div>
   );
 }
