@@ -1047,3 +1047,928 @@ fn test_semantic_search() {
         assert_ne!(r["title"], "Secret AI Draft", "Draft posts must not appear in semantic search");
     }
 }
+
+// ─── New Tests: Pagination, Filtering, Edge Cases ───
+
+#[test]
+fn test_post_pagination_limit_and_offset() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Pagination Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    // Create 5 published posts
+    for i in 0..5 {
+        client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+            .header(ContentType::JSON)
+            .header(auth.clone())
+            .body(format!(r#"{{"title": "Post {}", "content": "Content {}", "status": "published"}}"#, i, i))
+            .dispatch();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+
+    // Default listing returns all 5
+    let resp = client.get(format!("/api/v1/blogs/{}/posts", blog_id)).dispatch();
+    assert_eq!(resp.into_json::<Vec<serde_json::Value>>().unwrap().len(), 5);
+
+    // limit=2 returns only 2
+    let resp = client.get(format!("/api/v1/blogs/{}/posts?limit=2", blog_id)).dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts.len(), 2);
+
+    // limit=2&offset=2 returns next 2
+    let resp = client.get(format!("/api/v1/blogs/{}/posts?limit=2&offset=2", blog_id)).dispatch();
+    let posts2: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts2.len(), 2);
+    // Should be different posts
+    assert_ne!(posts[0]["id"], posts2[0]["id"]);
+
+    // offset beyond data returns empty
+    let resp = client.get(format!("/api/v1/blogs/{}/posts?offset=100", blog_id)).dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts.len(), 0);
+
+    // limit=0 should be clamped to 1
+    let resp = client.get(format!("/api/v1/blogs/{}/posts?limit=0", blog_id)).dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts.len(), 1);
+}
+
+#[test]
+fn test_post_tag_filtering() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Tag Filter Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    // Create posts with different tags
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Rust Intro", "content": "About Rust", "tags": ["rust", "programming"], "status": "published"}"#)
+        .dispatch();
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Python Intro", "content": "About Python", "tags": ["python", "programming"], "status": "published"}"#)
+        .dispatch();
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Cooking Tips", "content": "Recipes", "tags": ["cooking"], "status": "published"}"#)
+        .dispatch();
+
+    // Filter by "rust" tag
+    let resp = client.get(format!("/api/v1/blogs/{}/posts?tag=rust", blog_id)).dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts.len(), 1);
+    assert_eq!(posts[0]["title"], "Rust Intro");
+
+    // Filter by "programming" tag (matches 2)
+    let resp = client.get(format!("/api/v1/blogs/{}/posts?tag=programming", blog_id)).dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts.len(), 2);
+
+    // Filter by non-existent tag
+    let resp = client.get(format!("/api/v1/blogs/{}/posts?tag=javascript", blog_id)).dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts.len(), 0);
+}
+
+#[test]
+fn test_nonexistent_blog_returns_404() {
+    let client = test_client();
+
+    // Get non-existent blog
+    let resp = client.get("/api/v1/blogs/nonexistent-id").dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+
+    // List posts from non-existent blog
+    let resp = client.get("/api/v1/blogs/nonexistent-id/posts").dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+
+    // Get post from non-existent blog
+    let resp = client.get("/api/v1/blogs/nonexistent-id/posts/some-slug").dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+
+    // Stats from non-existent blog
+    let resp = client.get("/api/v1/blogs/nonexistent-id/stats").dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+
+    // Feed from non-existent blog
+    let resp = client.get("/api/v1/blogs/nonexistent-id/feed.rss").dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+    let resp = client.get("/api/v1/blogs/nonexistent-id/feed.json").dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+}
+
+#[test]
+fn test_nonexistent_post_slug_returns_404() {
+    let client = test_client();
+    let (blog_id, _) = create_blog_helper(&client, "Blog");
+
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/nonexistent-slug", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+}
+
+#[test]
+fn test_multi_blog_isolation() {
+    let client = test_client();
+    let (blog_a, key_a) = create_blog_helper(&client, "Blog A");
+    let (blog_b, key_b) = create_blog_helper(&client, "Blog B");
+
+    // Create post in blog A
+    client.post(format!("/api/v1/blogs/{}/posts", blog_a))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key_a)))
+        .body(r#"{"title": "A Post", "content": "In blog A", "status": "published"}"#)
+        .dispatch();
+
+    // Create post in blog B
+    client.post(format!("/api/v1/blogs/{}/posts", blog_b))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key_b)))
+        .body(r#"{"title": "B Post", "content": "In blog B", "status": "published"}"#)
+        .dispatch();
+
+    // Blog A only has its post
+    let resp = client.get(format!("/api/v1/blogs/{}/posts", blog_a)).dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts.len(), 1);
+    assert_eq!(posts[0]["title"], "A Post");
+
+    // Blog B only has its post
+    let resp = client.get(format!("/api/v1/blogs/{}/posts", blog_b)).dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts.len(), 1);
+    assert_eq!(posts[0]["title"], "B Post");
+
+    // Blog A's key can't create posts in Blog B
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_b))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key_a)))
+        .body(r#"{"title": "Cross Post"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Unauthorized);
+}
+
+#[test]
+fn test_blog_create_with_all_fields() {
+    let client = test_client();
+
+    // Create with description and is_public
+    let resp = client.post("/api/v1/blogs")
+        .header(ContentType::JSON)
+        .body(r#"{"name": "Full Blog", "description": "A test blog", "is_public": true}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let id = body["id"].as_str().unwrap();
+
+    // Verify the fields persisted
+    let resp = client.get(format!("/api/v1/blogs/{}", id)).dispatch();
+    let blog: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(blog["name"], "Full Blog");
+    assert_eq!(blog["description"], "A test blog");
+    assert_eq!(blog["is_public"], true);
+}
+
+#[test]
+fn test_blog_update_partial_fields() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Original Name");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    // Update only description (name stays)
+    let resp = client.patch(format!("/api/v1/blogs/{}", id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"description": "New description"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["name"], "Original Name");
+    assert_eq!(body["description"], "New description");
+
+    // Update only is_public (name and desc stay)
+    let resp = client.patch(format!("/api/v1/blogs/{}", id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"is_public": true}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["name"], "Original Name");
+    assert_eq!(body["description"], "New description");
+    assert_eq!(body["is_public"], true);
+
+    // Update only name
+    let resp = client.patch(format!("/api/v1/blogs/{}", id))
+        .header(ContentType::JSON).header(auth)
+        .body(r#"{"name": "Updated Name"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["name"], "Updated Name");
+    assert_eq!(body["description"], "New description");
+    assert_eq!(body["is_public"], true);
+}
+
+#[test]
+fn test_draft_to_published_workflow() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Workflow Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    // Create as draft
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "WIP Post", "content": "Draft content"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+    assert_eq!(post["status"], "draft");
+    assert!(post["published_at"].is_null());
+
+    // Not visible in public listing
+    let resp = client.get(format!("/api/v1/blogs/{}/posts", blog_id)).dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts.len(), 0);
+
+    // Publish it
+    let resp = client.patch(format!("/api/v1/blogs/{}/posts/{}", blog_id, post_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"status": "published"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let published: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(published["status"], "published");
+    assert!(published["published_at"].as_str().is_some());
+
+    // Now visible in public listing
+    let resp = client.get(format!("/api/v1/blogs/{}/posts", blog_id)).dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts.len(), 1);
+    assert_eq!(posts[0]["title"], "WIP Post");
+}
+
+#[test]
+fn test_post_custom_slug() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Slug Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    // Create with custom slug
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "My Post Title", "slug": "custom-slug-here", "status": "published"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let post: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(post["slug"], "custom-slug-here");
+    assert_eq!(post["title"], "My Post Title");
+
+    // Fetch by custom slug
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/custom-slug-here", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let fetched: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(fetched["title"], "My Post Title");
+}
+
+#[test]
+fn test_post_summary_and_author_name() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Author Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Authored Post", "content": "Full content", "summary": "A brief summary", "author_name": "Nanook", "status": "published"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let post: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(post["summary"], "A brief summary");
+    assert_eq!(post["author_name"], "Nanook");
+
+    // Verify persisted on get
+    let slug = post["slug"].as_str().unwrap();
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}", blog_id, slug)).dispatch();
+    let fetched: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(fetched["summary"], "A brief summary");
+    assert_eq!(fetched["author_name"], "Nanook");
+}
+
+#[test]
+fn test_comment_on_nonexistent_post() {
+    let client = test_client();
+    let (blog_id, _) = create_blog_helper(&client, "Blog");
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/fake-id/comments", blog_id))
+        .header(ContentType::JSON)
+        .body(r#"{"author_name": "Ghost", "content": "Orphan comment"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+}
+
+#[test]
+fn test_comment_empty_fields_rejected() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth)
+        .body(r#"{"title": "Post", "status": "published"}"#)
+        .dispatch();
+    let post_id = resp.into_json::<serde_json::Value>().unwrap()["id"].as_str().unwrap().to_string();
+
+    // Empty author_name
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/{}/comments", blog_id, post_id))
+        .header(ContentType::JSON)
+        .body(r#"{"author_name": "", "content": "Hello"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::UnprocessableEntity);
+
+    // Empty content
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/{}/comments", blog_id, post_id))
+        .header(ContentType::JSON)
+        .body(r#"{"author_name": "Alice", "content": ""}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::UnprocessableEntity);
+}
+
+#[test]
+fn test_json_error_catchers() {
+    let client = test_client();
+
+    // Unknown route should return JSON 404
+    let resp = client.get("/api/v1/totally-fake-route").dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["code"], "NOT_FOUND");
+}
+
+#[test]
+fn test_empty_blog_feeds() {
+    let client = test_client();
+    let (blog_id, _) = create_blog_helper(&client, "Empty Blog");
+
+    // RSS feed with no posts
+    let resp = client.get(format!("/api/v1/blogs/{}/feed.rss", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    assert!(body.contains("<rss"));
+    assert!(body.contains("Empty Blog"));
+    // No <item> elements
+    assert!(!body.contains("<item>"));
+
+    // JSON feed with no posts
+    let resp = client.get(format!("/api/v1/blogs/{}/feed.json", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["title"], "Empty Blog");
+    assert_eq!(body["items"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn test_search_pagination() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Search Page Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    // Create 5 published posts all containing "searchable"
+    for i in 0..5 {
+        client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+            .header(ContentType::JSON).header(auth.clone())
+            .body(format!(r#"{{"title": "Searchable Post {}", "content": "This is a searchable article number {}", "status": "published"}}"#, i, i))
+            .dispatch();
+    }
+
+    // Search with limit=2
+    let resp = client.get("/api/v1/search?q=searchable&limit=2").dispatch();
+    let results: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(results.len(), 2);
+
+    // Search with limit=2&offset=2
+    let resp = client.get("/api/v1/search?q=searchable&limit=2&offset=2").dispatch();
+    let results2: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(results2.len(), 2);
+    assert_ne!(results[0]["id"], results2[0]["id"]);
+
+    // Search with offset beyond results
+    let resp = client.get("/api/v1/search?q=searchable&offset=100").dispatch();
+    let results: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(results.len(), 0);
+}
+
+#[test]
+fn test_search_stemming() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Stemming Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Deploying Applications", "content": "This guide covers deployment strategies for web applications.", "status": "published"}"#)
+        .dispatch();
+
+    // "deploy" should match "deploying" and "deployment" via porter stemmer
+    let resp = client.get("/api/v1/search?q=deploy").dispatch();
+    let results: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert!(!results.is_empty(), "Stemming should match 'deploy' to 'deploying'/'deployment'");
+    assert_eq!(results[0]["title"], "Deploying Applications");
+
+    // "deployed" should also match
+    let resp = client.get("/api/v1/search?q=deployed").dispatch();
+    let results: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert!(!results.is_empty(), "Stemming should match 'deployed' to 'deploying'/'deployment'");
+}
+
+#[test]
+fn test_delete_post_cascades_comments() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Cascade Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    // Create a post with comments
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Cascade Post", "status": "published"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+
+    // Add comments
+    for i in 0..3 {
+        client.post(format!("/api/v1/blogs/{}/posts/{}/comments", blog_id, post_id))
+            .header(ContentType::JSON)
+            .body(format!(r#"{{"author_name": "User", "content": "Comment {}"}}"#, i))
+            .dispatch();
+    }
+
+    // Verify comments exist
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/comments", blog_id, post_id)).dispatch();
+    assert_eq!(resp.into_json::<Vec<serde_json::Value>>().unwrap().len(), 3);
+
+    // Delete the post
+    let resp = client.delete(format!("/api/v1/blogs/{}/posts/{}", blog_id, post_id))
+        .header(auth)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+
+    // Comments should be gone too (post doesn't exist anymore)
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/comments", blog_id, post_id)).dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+}
+
+#[test]
+fn test_post_update_content_rerenders_markdown() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Render Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Render Test", "content": "Original *text*"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+    assert!(post["content_html"].as_str().unwrap().contains("<em>text</em>"));
+
+    // Update content — HTML should be re-rendered
+    let resp = client.patch(format!("/api/v1/blogs/{}/posts/{}", blog_id, post_id))
+        .header(ContentType::JSON).header(auth)
+        .body(r#"{"content": "Updated **bold** text"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let updated: serde_json::Value = resp.into_json().unwrap();
+    assert!(updated["content_html"].as_str().unwrap().contains("<strong>bold</strong>"));
+    assert!(!updated["content_html"].as_str().unwrap().contains("<em>text</em>"));
+}
+
+#[test]
+fn test_post_empty_title_rejected() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth)
+        .body(r#"{"title": "   "}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::UnprocessableEntity);
+}
+
+#[test]
+fn test_delete_post_without_auth() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth)
+        .body(r#"{"title": "Protected Post"}"#)
+        .dispatch();
+    let post_id = resp.into_json::<serde_json::Value>().unwrap()["id"].as_str().unwrap().to_string();
+
+    // Delete without auth
+    let resp = client.delete(format!("/api/v1/blogs/{}/posts/{}", blog_id, post_id)).dispatch();
+    assert!(resp.status() == Status::Unauthorized || resp.status() == Status::NotFound);
+}
+
+#[test]
+fn test_delete_nonexistent_post() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.delete(format!("/api/v1/blogs/{}/posts/fake-id", blog_id))
+        .header(auth)
+        .dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+}
+
+#[test]
+fn test_blog_stats_empty_blog() {
+    let client = test_client();
+    let (blog_id, _) = create_blog_helper(&client, "Empty Stats Blog");
+
+    let resp = client.get(format!("/api/v1/blogs/{}/stats", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let stats: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(stats["total_posts"].as_i64().unwrap(), 0);
+    assert_eq!(stats["published_posts"].as_i64().unwrap(), 0);
+    assert_eq!(stats["total_views"].as_i64().unwrap(), 0);
+    assert_eq!(stats["total_comments"].as_i64().unwrap(), 0);
+    assert_eq!(stats["top_posts"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn test_blog_stats_with_drafts_and_published() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Mixed Stats Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    // 2 drafts, 1 published
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Draft 1"}"#).dispatch();
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Draft 2"}"#).dispatch();
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth)
+        .body(r#"{"title": "Published", "status": "published"}"#).dispatch();
+
+    let resp = client.get(format!("/api/v1/blogs/{}/stats", blog_id)).dispatch();
+    let stats: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(stats["total_posts"].as_i64().unwrap(), 3);
+    assert_eq!(stats["published_posts"].as_i64().unwrap(), 1);
+}
+
+#[test]
+fn test_export_nonexistent_post() {
+    let client = test_client();
+    let (blog_id, _) = create_blog_helper(&client, "Export Blog");
+
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/no-such-slug/export/markdown", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/no-such-slug/export/html", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/no-such-slug/export/nostr", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+}
+
+#[test]
+fn test_related_posts_nonexistent_post() {
+    let client = test_client();
+    let (blog_id, _) = create_blog_helper(&client, "Related Blog");
+
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/fake-id/related", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+}
+
+#[test]
+fn test_related_posts_limit_param() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Related Limit Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    // Create 4 posts with overlapping tags
+    for i in 0..4 {
+        client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+            .header(ContentType::JSON).header(auth.clone())
+            .body(format!(r#"{{"title": "Post {}", "content": "Content", "tags": ["common", "tag{}"], "status": "published"}}"#, i, i))
+            .dispatch();
+    }
+
+    // Get related for first post with limit=1
+    let resp = client.get(format!("/api/v1/blogs/{}/posts", blog_id)).dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    let first_id = posts[0]["id"].as_str().unwrap();
+
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/related?limit=1", blog_id, first_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let related: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert!(related.len() <= 1);
+}
+
+#[test]
+fn test_post_tags_as_array() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Tags Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth)
+        .body(r#"{"title": "Tagged Post", "tags": ["rust", "web", "api"], "status": "published"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let tags = post["tags"].as_array().unwrap();
+    assert_eq!(tags.len(), 3);
+    assert_eq!(tags[0], "rust");
+    assert_eq!(tags[1], "web");
+    assert_eq!(tags[2], "api");
+}
+
+#[test]
+fn test_update_post_preserves_unset_fields() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Preserve Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    // Create with all fields
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Full Post", "content": "Original content", "summary": "Original summary", "tags": ["a", "b"], "author_name": "Agent", "status": "published"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+
+    // Update only title — other fields should be preserved
+    let resp = client.patch(format!("/api/v1/blogs/{}/posts/{}", blog_id, post_id))
+        .header(ContentType::JSON).header(auth)
+        .body(r#"{"title": "Updated Title"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let updated: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(updated["title"], "Updated Title");
+    assert_eq!(updated["content"], "Original content");
+    assert_eq!(updated["summary"], "Original summary");
+    assert_eq!(updated["author_name"], "Agent");
+    assert_eq!(updated["tags"].as_array().unwrap().len(), 2);
+    assert_eq!(updated["status"], "published");
+}
+
+#[test]
+fn test_multiple_comments_ordering() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Comments Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth)
+        .body(r#"{"title": "Comment Post", "status": "published"}"#)
+        .dispatch();
+    let post_id = resp.into_json::<serde_json::Value>().unwrap()["id"].as_str().unwrap().to_string();
+
+    // Add 3 comments in order
+    for name in &["Alice", "Bob", "Charlie"] {
+        client.post(format!("/api/v1/blogs/{}/posts/{}/comments", blog_id, post_id))
+            .header(ContentType::JSON)
+            .body(format!(r#"{{"author_name": "{}", "content": "Hello from {}"}}"#, name, name))
+            .dispatch();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+
+    // List comments — should be in chronological order
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/comments", blog_id, post_id)).dispatch();
+    let comments: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(comments.len(), 3);
+    assert_eq!(comments[0]["author_name"], "Alice");
+    assert_eq!(comments[1]["author_name"], "Bob");
+    assert_eq!(comments[2]["author_name"], "Charlie");
+}
+
+#[test]
+fn test_post_comment_count_field() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Count Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth)
+        .body(r#"{"title": "Counted Post", "status": "published"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+    let slug = post["slug"].as_str().unwrap();
+    assert_eq!(post["comment_count"].as_i64().unwrap(), 0);
+
+    // Add 2 comments
+    for i in 0..2 {
+        client.post(format!("/api/v1/blogs/{}/posts/{}/comments", blog_id, post_id))
+            .header(ContentType::JSON)
+            .body(format!(r#"{{"author_name": "User", "content": "Comment {}"}}"#, i))
+            .dispatch();
+    }
+
+    // Get post — comment_count should be 2
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}", blog_id, slug)).dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(post["comment_count"].as_i64().unwrap(), 2);
+
+    // Also in list
+    let resp = client.get(format!("/api/v1/blogs/{}/posts", blog_id)).dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts[0]["comment_count"].as_i64().unwrap(), 2);
+}
+
+#[test]
+fn test_semantic_search_limit_param() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Sem Limit Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    // Create several posts about the same topic
+    for i in 0..5 {
+        client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+            .header(ContentType::JSON).header(auth.clone())
+            .body(format!(r#"{{"title": "Programming Article {}", "content": "Software engineering and programming practices for developers.", "status": "published"}}"#, i))
+            .dispatch();
+    }
+
+    // Semantic search with limit=2
+    let resp = client.get("/api/v1/search/semantic?q=programming&limit=2").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let results: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert!(results.len() <= 2);
+}
+
+#[test]
+fn test_rss_feed_excludes_drafts() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "RSS Draft Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    // Create 1 draft, 1 published
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Draft Post", "content": "Secret"}"#)
+        .dispatch();
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth)
+        .body(r#"{"title": "Published Post", "content": "Public", "status": "published"}"#)
+        .dispatch();
+
+    let resp = client.get(format!("/api/v1/blogs/{}/feed.rss", blog_id)).dispatch();
+    let body = resp.into_string().unwrap();
+    assert!(body.contains("Published Post"));
+    assert!(!body.contains("Draft Post"));
+
+    let resp = client.get(format!("/api/v1/blogs/{}/feed.json", blog_id)).dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let items = body["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["title"], "Published Post");
+}
+
+#[test]
+fn test_slug_generation_special_characters() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Slug Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    // Title with special characters
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Hello, World! This is a Test (2026)", "status": "published"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let slug = post["slug"].as_str().unwrap();
+    // Slug should be lowercase, hyphenated, no special chars
+    assert!(!slug.contains('!'));
+    assert!(!slug.contains(','));
+    assert!(!slug.contains('('));
+    assert!(!slug.contains(')'));
+    assert!(slug.contains("hello"));
+    assert!(slug.contains("world"));
+}
+
+#[test]
+fn test_markdown_rendering_features() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Markdown Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let content = r#"# Heading 1
+
+## Heading 2
+
+This is a paragraph with **bold**, *italic*, and `code`.
+
+- List item 1
+- List item 2
+
+```rust
+fn main() {
+    println!("Hello");
+}
+```
+
+> A blockquote
+
+[Link text](https://example.com)"#;
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth)
+        .body(serde_json::json!({
+            "title": "Markdown Test",
+            "content": content,
+            "status": "published"
+        }).to_string())
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let html = post["content_html"].as_str().unwrap();
+
+    assert!(html.contains("<h1>"), "Should render h1");
+    assert!(html.contains("<h2>"), "Should render h2");
+    assert!(html.contains("<strong>bold</strong>"), "Should render bold");
+    assert!(html.contains("<em>italic</em>"), "Should render italic");
+    assert!(html.contains("<code>"), "Should render code");
+    assert!(html.contains("<ul>"), "Should render list");
+    assert!(html.contains("<li>"), "Should render list items");
+    assert!(html.contains("<pre>"), "Should render code block");
+    assert!(html.contains("<blockquote>"), "Should render blockquote");
+    assert!(html.contains("href=\"https://example.com\""), "Should render links");
+}
+
+#[test]
+fn test_post_is_pinned_field_default() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Pin Default Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth)
+        .body(r#"{"title": "Normal Post", "status": "published"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(post["is_pinned"], false, "New posts should not be pinned by default");
+}
+
+#[test]
+fn test_search_across_multiple_blogs() {
+    let client = test_client();
+    let (blog_a, key_a) = create_blog_helper(&client, "Blog Alpha");
+    let (blog_b, key_b) = create_blog_helper(&client, "Blog Beta");
+
+    // Post in Blog A
+    client.post(format!("/api/v1/blogs/{}/posts", blog_a))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key_a)))
+        .body(r#"{"title": "Findable in Alpha", "content": "Unique crossblog term xyzzy123", "status": "published"}"#)
+        .dispatch();
+
+    // Post in Blog B
+    client.post(format!("/api/v1/blogs/{}/posts", blog_b))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key_b)))
+        .body(r#"{"title": "Findable in Beta", "content": "Also contains crossblog xyzzy123", "status": "published"}"#)
+        .dispatch();
+
+    // Search should find posts from both blogs
+    let resp = client.get("/api/v1/search?q=xyzzy123").dispatch();
+    let results: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(results.len(), 2, "Search should span all blogs");
+
+    // Verify results come from different blogs
+    let blog_names: Vec<&str> = results.iter().map(|r| r["blog_name"].as_str().unwrap()).collect();
+    assert!(blog_names.contains(&"Blog Alpha"));
+    assert!(blog_names.contains(&"Blog Beta"));
+}
+
+#[test]
+fn test_preview_empty_content() {
+    let client = test_client();
+    let resp = client.post("/api/v1/preview")
+        .header(ContentType::JSON)
+        .body(r#"{"content": ""}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["html"], "");
+}
+
+#[test]
+fn test_update_blog_nonexistent() {
+    let client = test_client();
+    // We need a valid key for a different blog to attempt updating a nonexistent one
+    let (_, key) = create_blog_helper(&client, "Real Blog");
+    let resp = client.patch("/api/v1/blogs/nonexistent-blog-id")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"name": "Updated"}"#)
+        .dispatch();
+    // Should fail (key doesn't match nonexistent blog)
+    assert!(resp.status() == Status::NotFound || resp.status() == Status::Unauthorized);
+}
