@@ -34,7 +34,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
   - Client-side routing
   - Dark theme matching HNR design system
   - Auth key detection from URL (?key=) + localStorage persistence
-- **Tests** - 36 integration tests + 12 unit tests passing (48 total)
+- **Tests** - 74 integration tests + 12 unit tests passing (86 total)
 - **Docker** - 3-stage multi-stage build
 - **Auth** - Bearer/X-API-Key/?key= (same as kanban)
 
