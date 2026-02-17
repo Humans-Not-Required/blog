@@ -130,7 +130,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 
 - ~~**Remove SSE real-time updates**~~ ✅ — Removed EventBus, event stream endpoint (`/blogs/:id/events/stream`), all `bus.emit()` calls from mutation routes, frontend EventSource subscriptions, tokio sync dependency, and SSE references from OpenAPI spec. -208 lines of code. 35 tests pass, zero clippy warnings. Commit: 688660c
 
-*Last updated: 2026-02-13 22:35 UTC — Semantic search added (TF-IDF + cosine similarity). 48 tests passing (12 unit + 36 integration). Deployed to staging via ghcr.io.*
+*Last updated: 2026-02-17 10:55 UTC — 100 tests passing (24 unit + 76 integration). Security hardened, well-known skills discovery, full documentation. Deployed to staging via ghcr.io.*
 
 ## Incoming directions (2026-02-13T17:49:01Z)
 - Jordan: Cloudflare tunnel/DNS task being archived (he’s rolling out a more permanent solution). No action on my side for now. (task 8479e4ca)
