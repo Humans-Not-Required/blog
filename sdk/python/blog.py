@@ -296,7 +296,7 @@ class Blog:
         """``POST /api/v1/blogs/{id}/posts/{post_id}/comments``"""
         return self._request(
             "POST", f"/api/v1/blogs/{blog_id}/posts/{post_id}/comments",
-            json_body={"author": author, "content": content},
+            json_body={"author_name": author, "content": content},
             manage_key=manage_key,
         )
 
