@@ -33,6 +33,7 @@ jobs:
         working-directory: backend/
       - name: Start server
         run: |
+          mkdir -p static
           ./backend/target/release/blog &
           echo "SERVER_PID=$!" >> $GITHUB_ENV
           for i in $(seq 1 30); do
