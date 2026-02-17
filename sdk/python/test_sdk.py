@@ -78,6 +78,9 @@ class WriteTestCase(unittest.TestCase):
         try:
             blog = cls.b.create_blog(f"SDK-Test-{ts()}", description="Integration tests")
             cls.blog_id = blog["id"]
+            # Use the new blog's manage_key (each blog has its own key)
+            if "manage_key" in blog:
+                cls.b = Blog(BASE_URL, manage_key=blog["manage_key"])
         except (RateLimitError, AuthError) as e:
             raise unittest.SkipTest(f"Cannot create test blog: {e}")
 
