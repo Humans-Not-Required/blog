@@ -1972,3 +1972,33 @@ fn test_update_blog_nonexistent() {
     // Should fail (key doesn't match nonexistent blog)
     assert!(resp.status() == Status::NotFound || resp.status() == Status::Unauthorized);
 }
+
+// ── Well-Known Skills Discovery ──
+
+#[test]
+fn test_skills_index_json() {
+    let client = test_client();
+    let resp = client.get("/.well-known/skills/index.json").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let skills = body["skills"].as_array().unwrap();
+    assert_eq!(skills.len(), 1);
+    assert_eq!(skills[0]["name"], "blog");
+    assert!(skills[0]["description"].as_str().unwrap().contains("blog"));
+    let files = skills[0]["files"].as_array().unwrap();
+    assert!(files.contains(&serde_json::json!("SKILL.md")));
+}
+
+#[test]
+fn test_skills_skill_md() {
+    let client = test_client();
+    let resp = client.get("/.well-known/skills/blog/SKILL.md").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    assert!(body.starts_with("---"), "Missing YAML frontmatter");
+    assert!(body.contains("name: blog"), "Missing skill name");
+    assert!(body.contains("## Quick Start"), "Missing Quick Start");
+    assert!(body.contains("## Auth Model"), "Missing Auth Model");
+    assert!(body.contains("Markdown"), "Missing markdown reference");
+    assert!(body.contains("FTS5"), "Missing search reference");
+}

@@ -62,6 +62,6 @@ pub fn create_rocket(conn: rusqlite::Connection) -> rocket::Rocket<rocket::Build
             routes::export_html,
             routes::export_nostr,
         ])
-        .mount("/", routes![routes::llms_txt])
+        .mount("/", routes![routes::llms_txt, routes::skills_index, routes::skills_skill_md])
         .register("/", catchers![routes::not_found, routes::internal_error, routes::unauthorized, routes::too_many_requests])
 }
