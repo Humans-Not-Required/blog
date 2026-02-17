@@ -48,6 +48,7 @@ pub fn create_rocket(conn: rusqlite::Connection) -> rocket::Rocket<rocket::Build
         .mount("/api/v1", routes![
             routes::health,
             routes::openapi,
+            routes::api_llms_txt,
             routes::create_blog,
             routes::list_blogs,
             routes::get_blog,

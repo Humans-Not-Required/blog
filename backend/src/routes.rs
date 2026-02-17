@@ -252,6 +252,13 @@ pub fn llms_txt() -> (Status, (rocket::http::ContentType, String)) {
     ))
 }
 
+/// API-level /api/v1/llms.txt mirror for consistency across HNR services
+#[allow(dead_code)]
+#[get("/llms.txt")]
+pub fn api_llms_txt() -> (Status, (rocket::http::ContentType, String)) {
+    llms_txt()
+}
+
 #[post("/blogs", format = "json", data = "<req>")]
 pub fn create_blog(req: Json<CreateBlogReq>, client_ip: ClientIp, limiters: &State<RateLimiters>, db: &State<DbPool>) -> Result<(Status, Json<BlogCreated>), (Status, Json<ApiError>)> {
     let rl = limiters.blog_creation.check_default(&client_ip.0);

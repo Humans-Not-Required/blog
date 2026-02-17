@@ -372,6 +372,15 @@ fn test_llms_txt() {
 }
 
 #[test]
+fn test_api_llms_txt() {
+    let client = test_client();
+    let resp = client.get("/api/v1/llms.txt").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    assert!(body.contains("Blog Platform API"));
+}
+
+#[test]
 fn test_search_posts() {
     let client = test_client();
     let (id, key) = create_blog_helper(&client, "Search Blog");
