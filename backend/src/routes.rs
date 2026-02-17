@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::auth::{BlogToken, generate_key, hash_key};
 use crate::rate_limit::{ClientIp, RateLimiter};
 use crate::semantic::SemanticIndex;
-use crate::DbPool;
+use crate::{DbPool, DbPoolExt};
 
 type ContentResult = Result<(Status, (rocket::http::ContentType, String)), (Status, Json<ApiError>)>;
 
@@ -27,8 +27,8 @@ fn err(status: Status, msg: &str, code: &str) -> (Status, Json<ApiError>) {
     (status, Json(ApiError { error: msg.to_string(), code: code.to_string() }))
 }
 
-fn db_err(msg: &str) -> (Status, Json<ApiError>) {
-    err(Status::InternalServerError, msg, "DB_ERROR")
+fn db_err(_msg: &str) -> (Status, Json<ApiError>) {
+    err(Status::InternalServerError, "Internal server error", "DB_ERROR")
 }
 
 #[derive(Serialize)]
@@ -268,7 +268,7 @@ pub fn create_blog(req: Json<CreateBlogReq>, client_ip: ClientIp, limiters: &Sta
     let desc = req.description.as_deref().unwrap_or("");
     let is_public = req.is_public.unwrap_or(false) as i32;
 
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO blogs (id, name, description, manage_key_hash, is_public) VALUES (?1, ?2, ?3, ?4, ?5)",
         rusqlite::params![id, name, desc, hash, is_public],
@@ -286,7 +286,7 @@ pub fn create_blog(req: Json<CreateBlogReq>, client_ip: ClientIp, limiters: &Sta
 
 #[get("/blogs")]
 pub fn list_blogs(db: &State<DbPool>) -> Result<Json<Vec<BlogResponse>>, (Status, Json<ApiError>)> {
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
     let mut stmt = conn.prepare(
         "SELECT id, name, description, is_public, created_at, updated_at FROM blogs WHERE is_public = 1 ORDER BY created_at DESC"
     ).map_err(|e| db_err(&e.to_string()))?;
@@ -309,7 +309,7 @@ pub fn list_blogs(db: &State<DbPool>) -> Result<Json<Vec<BlogResponse>>, (Status
 
 #[get("/blogs/<blog_id>")]
 pub fn get_blog(blog_id: &str, db: &State<DbPool>) -> Result<Json<BlogResponse>, (Status, Json<ApiError>)> {
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
     conn.query_row(
         "SELECT id, name, description, is_public, created_at, updated_at FROM blogs WHERE id = ?1",
         [blog_id],
@@ -327,7 +327,7 @@ pub fn get_blog(blog_id: &str, db: &State<DbPool>) -> Result<Json<BlogResponse>,
 
 #[patch("/blogs/<blog_id>", format = "json", data = "<req>")]
 pub fn update_blog(blog_id: &str, req: Json<UpdateBlogReq>, token: BlogToken, db: &State<DbPool>) -> Result<Json<BlogResponse>, (Status, Json<ApiError>)> {
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
     verify_blog_key(&conn, blog_id, &token)?;
 
     let current = conn.query_row(
@@ -361,7 +361,7 @@ pub fn update_blog(blog_id: &str, req: Json<UpdateBlogReq>, token: BlogToken, db
 
 #[post("/blogs/<blog_id>/posts", format = "json", data = "<req>")]
 pub fn create_post(blog_id: &str, req: Json<CreatePostReq>, token: BlogToken, db: &State<DbPool>, sem: &State<SemanticIndex>) -> Result<(Status, Json<PostResponse>), (Status, Json<ApiError>)> {
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
     verify_blog_key(&conn, blog_id, &token)?;
 
     let title = req.title.trim();
@@ -435,7 +435,7 @@ fn query_post(conn: &rusqlite::Connection, post_id: &str) -> Result<PostResponse
 
 #[get("/blogs/<blog_id>/posts?<tag>&<limit>&<offset>")]
 pub fn list_posts(blog_id: &str, tag: Option<&str>, limit: Option<i64>, offset: Option<i64>, token: Option<BlogToken>, db: &State<DbPool>) -> Result<Json<Vec<PostResponse>>, (Status, Json<ApiError>)> {
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
     // Check blog exists
     conn.query_row("SELECT 1 FROM blogs WHERE id = ?1", [blog_id], |_| Ok(()))
         .map_err(|_| err(Status::NotFound, "Blog not found", "NOT_FOUND"))?;
@@ -504,7 +504,7 @@ pub fn list_posts(blog_id: &str, tag: Option<&str>, limit: Option<i64>, offset: 
 
 #[get("/blogs/<blog_id>/posts/<slug>", rank = 2)]
 pub fn get_post_by_slug(blog_id: &str, slug: &str, client_ip: ClientIp, db: &State<DbPool>) -> Result<Json<PostResponse>, (Status, Json<ApiError>)> {
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
     let post = conn.query_row(
         "SELECT p.id, p.blog_id, p.title, p.slug, p.content, p.content_html, p.summary, p.tags, p.status, p.published_at, p.author_name, p.created_at, p.updated_at,
                 (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) as comment_count,
@@ -549,7 +549,7 @@ pub fn get_post_by_slug(blog_id: &str, slug: &str, client_ip: ClientIp, db: &Sta
 
 #[patch("/blogs/<blog_id>/posts/<post_id>", format = "json", data = "<req>")]
 pub fn update_post(blog_id: &str, post_id: &str, req: Json<UpdatePostReq>, token: BlogToken, db: &State<DbPool>, sem: &State<SemanticIndex>) -> Result<Json<PostResponse>, (Status, Json<ApiError>)> {
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
     verify_blog_key(&conn, blog_id, &token)?;
 
     // Get current post
@@ -610,7 +610,7 @@ pub fn update_post(blog_id: &str, post_id: &str, req: Json<UpdatePostReq>, token
 
 #[delete("/blogs/<blog_id>/posts/<post_id>")]
 pub fn delete_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<DbPool>, sem: &State<SemanticIndex>) -> Result<Json<serde_json::Value>, (Status, Json<ApiError>)> {
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
     verify_blog_key(&conn, blog_id, &token)?;
 
     // Delete comments first, then post views
@@ -638,7 +638,7 @@ pub fn create_comment(blog_id: &str, post_id: &str, req: Json<CreateCommentReq>,
     if !rl.allowed {
         return Err(err(Status::TooManyRequests, &format!("Rate limit exceeded. Try again in {} seconds", rl.reset_secs), "RATE_LIMIT_EXCEEDED"));
     }
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
     // Verify post exists and belongs to blog
     conn.query_row(
         "SELECT 1 FROM posts WHERE id = ?1 AND blog_id = ?2 AND status = 'published'",
@@ -675,7 +675,7 @@ pub fn create_comment(blog_id: &str, post_id: &str, req: Json<CreateCommentReq>,
 
 #[get("/blogs/<blog_id>/posts/<post_id>/comments")]
 pub fn list_comments(blog_id: &str, post_id: &str, db: &State<DbPool>) -> Result<Json<Vec<CommentResponse>>, (Status, Json<ApiError>)> {
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
     // Verify post exists
     conn.query_row(
         "SELECT 1 FROM posts WHERE id = ?1 AND blog_id = ?2",
@@ -706,7 +706,7 @@ pub fn list_comments(blog_id: &str, post_id: &str, db: &State<DbPool>) -> Result
 
 #[delete("/blogs/<blog_id>/posts/<post_id>/comments/<comment_id>")]
 pub fn delete_comment(blog_id: &str, post_id: &str, comment_id: &str, token: BlogToken, db: &State<DbPool>) -> Result<Json<serde_json::Value>, (Status, Json<ApiError>)> {
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
     verify_blog_key(&conn, blog_id, &token)?;
 
     // Verify post belongs to blog
@@ -733,7 +733,7 @@ pub fn delete_comment(blog_id: &str, post_id: &str, comment_id: &str, token: Blo
 
 #[post("/blogs/<blog_id>/posts/<post_id>/pin")]
 pub fn pin_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<DbPool>) -> Result<Json<PostResponse>, (Status, Json<ApiError>)> {
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
     verify_blog_key(&conn, blog_id, &token)?;
 
     // Verify post exists and belongs to blog
@@ -753,7 +753,7 @@ pub fn pin_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<DbPoo
 
 #[post("/blogs/<blog_id>/posts/<post_id>/unpin")]
 pub fn unpin_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<DbPool>) -> Result<Json<PostResponse>, (Status, Json<ApiError>)> {
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
     verify_blog_key(&conn, blog_id, &token)?;
 
     conn.query_row(
@@ -774,7 +774,7 @@ pub fn unpin_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<DbP
 
 #[get("/blogs/<blog_id>/feed.rss")]
 pub fn rss_feed(blog_id: &str, db: &State<DbPool>) -> ContentResult {
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
     let blog = conn.query_row(
         "SELECT name, description FROM blogs WHERE id = ?1", [blog_id],
         |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
@@ -820,7 +820,7 @@ pub fn rss_feed(blog_id: &str, db: &State<DbPool>) -> ContentResult {
 
 #[get("/blogs/<blog_id>/feed.json")]
 pub fn json_feed(blog_id: &str, db: &State<DbPool>) -> Result<Json<serde_json::Value>, (Status, Json<ApiError>)> {
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
     let blog = conn.query_row(
         "SELECT name, description FROM blogs WHERE id = ?1", [blog_id],
         |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
@@ -879,7 +879,7 @@ pub fn search_posts(q: &str, limit: Option<i64>, offset: Option<i64>, db: &State
     if q.trim().is_empty() {
         return Err(err(Status::BadRequest, "Query parameter 'q' is required", "VALIDATION_ERROR"));
     }
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
     let lim = limit.unwrap_or(20).clamp(1, 100);
     let off = offset.unwrap_or(0).max(0);
     let query = q.trim().to_string();
@@ -987,7 +987,7 @@ pub fn semantic_search(q: &str, limit: Option<usize>, blog_id: Option<&str>, db:
         return Ok(Json(Vec::new()));
     }
 
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
     let mut results = Vec::new();
     for hit in hits {
         let row = conn.query_row(
@@ -1058,7 +1058,7 @@ fn title_words(title: &str) -> std::collections::HashSet<String> {
 
 #[get("/blogs/<blog_id>/posts/<post_id>/related?<limit>")]
 pub fn related_posts(blog_id: &str, post_id: &str, limit: Option<usize>, db: &State<DbPool>) -> Result<Json<Vec<RelatedPost>>, (Status, Json<ApiError>)> {
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
 
     // Get the source post
     let (src_tags_str, src_title): (String, String) = conn.query_row(
@@ -1147,7 +1147,7 @@ pub struct PostViewSummary {
 
 #[get("/blogs/<blog_id>/stats")]
 pub fn blog_stats(blog_id: &str, db: &State<DbPool>) -> Result<Json<BlogStats>, (Status, Json<ApiError>)> {
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
 
     let blog_name: String = conn.query_row(
         "SELECT name FROM blogs WHERE id = ?1", [blog_id], |r| r.get(0),
@@ -1258,7 +1258,7 @@ pub struct ExportMarkdown {
 
 #[get("/blogs/<blog_id>/posts/<slug>/export/markdown", rank = 3)]
 pub fn export_markdown(blog_id: &str, slug: &str, db: &State<DbPool>) -> Result<Json<ExportMarkdown>, (Status, Json<ApiError>)> {
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
     let post = conn.query_row(
         "SELECT title, slug, content, summary, tags, author_name, published_at FROM posts WHERE blog_id = ?1 AND slug = ?2 AND status = 'published'",
         rusqlite::params![blog_id, slug],
@@ -1302,7 +1302,7 @@ pub fn export_markdown(blog_id: &str, slug: &str, db: &State<DbPool>) -> Result<
 
 #[get("/blogs/<blog_id>/posts/<slug>/export/html", rank = 4)]
 pub fn export_html(blog_id: &str, slug: &str, db: &State<DbPool>) -> ContentResult {
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
     let post = conn.query_row(
         "SELECT title, content_html, summary, author_name, published_at, tags FROM posts WHERE blog_id = ?1 AND slug = ?2 AND status = 'published'",
         rusqlite::params![blog_id, slug],
@@ -1376,7 +1376,7 @@ pub struct NostrExport {
 
 #[get("/blogs/<blog_id>/posts/<slug>/export/nostr", rank = 5)]
 pub fn export_nostr(blog_id: &str, slug: &str, db: &State<DbPool>) -> Result<Json<NostrExport>, (Status, Json<ApiError>)> {
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
     let post = conn.query_row(
         "SELECT title, slug, content, summary, tags, author_name, published_at FROM posts WHERE blog_id = ?1 AND slug = ?2 AND status = 'published'",
         rusqlite::params![blog_id, slug],

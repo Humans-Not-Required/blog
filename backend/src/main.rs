@@ -11,6 +11,17 @@ mod semantic;
 
 pub type DbPool = Mutex<rusqlite::Connection>;
 
+/// Extension trait for DbPool to recover from mutex poison
+pub trait DbPoolExt {
+    fn conn(&self) -> std::sync::MutexGuard<'_, rusqlite::Connection>;
+}
+
+impl DbPoolExt for DbPool {
+    fn conn(&self) -> std::sync::MutexGuard<'_, rusqlite::Connection> {
+        self.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
 #[launch]
 fn rocket() -> _ {
     let db_path = std::env::var("DATABASE_PATH").unwrap_or_else(|_| "data/blog.db".to_string());

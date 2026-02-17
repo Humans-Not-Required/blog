@@ -9,6 +9,17 @@ pub mod semantic;
 
 pub type DbPool = std::sync::Mutex<rusqlite::Connection>;
 
+/// Extension trait for DbPool to recover from mutex poison
+pub trait DbPoolExt {
+    fn conn(&self) -> std::sync::MutexGuard<'_, rusqlite::Connection>;
+}
+
+impl DbPoolExt for DbPool {
+    fn conn(&self) -> std::sync::MutexGuard<'_, rusqlite::Connection> {
+        self.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
 pub fn create_rocket(conn: rusqlite::Connection) -> rocket::Rocket<rocket::Build> {
     let cors = rocket_cors::CorsOptions::default()
         .allowed_origins(rocket_cors::AllowedOrigins::all())

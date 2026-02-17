@@ -258,7 +258,7 @@ impl SemanticIndex {
             .collect();
 
         let doc_count = documents.len();
-        let mut data = self.inner.write().unwrap();
+        let mut data = self.inner.write().unwrap_or_else(|e| e.into_inner());
         data.documents = documents;
         data.idf = idf;
         data.doc_count = doc_count;
@@ -271,7 +271,7 @@ impl SemanticIndex {
             return Vec::new();
         }
 
-        let data = self.inner.read().unwrap();
+        let data = self.inner.read().unwrap_or_else(|e| e.into_inner());
         let tf = term_frequency(&tokens);
         let (q_tfidf, q_mag) = compute_tfidf(&tf, &data.idf);
 
@@ -296,7 +296,7 @@ impl SemanticIndex {
             return Vec::new();
         }
 
-        let data = self.inner.read().unwrap();
+        let data = self.inner.read().unwrap_or_else(|e| e.into_inner());
         let tf = term_frequency(&tokens);
         let (q_tfidf, q_mag) = compute_tfidf(&tf, &data.idf);
 
@@ -318,7 +318,7 @@ impl SemanticIndex {
     /// Find posts similar to a given post. Used by related posts endpoint.
     #[allow(dead_code)]
     pub fn find_similar(&self, post_id: &str, blog_id: &str, limit: usize) -> Vec<SemanticHit> {
-        let data = self.inner.read().unwrap();
+        let data = self.inner.read().unwrap_or_else(|e| e.into_inner());
 
         let source = match data.documents.iter().find(|d| d.post_id == post_id) {
             Some(doc) => doc,
@@ -353,7 +353,7 @@ impl SemanticIndex {
 
     /// Add or update a single post in the index. Triggers full IDF recomputation.
     pub fn upsert(&self, post: PostData) {
-        let mut data = self.inner.write().unwrap();
+        let mut data = self.inner.write().unwrap_or_else(|e| e.into_inner());
 
         // Remove existing entry if any
         data.documents.retain(|d| d.post_id != post.post_id);
@@ -409,7 +409,7 @@ impl SemanticIndex {
 
     /// Remove a post from the index.
     pub fn remove(&self, post_id: &str) {
-        let mut data = self.inner.write().unwrap();
+        let mut data = self.inner.write().unwrap_or_else(|e| e.into_inner());
         data.documents.retain(|d| d.post_id != post_id);
         data.doc_count = data.documents.len();
         // IDF not recomputed on removal — acceptable for small corpus
