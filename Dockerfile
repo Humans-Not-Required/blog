@@ -18,6 +18,11 @@ RUN touch src/**/*.rs src/*.rs 2>/dev/null || true && cargo build --release
 
 # Stage 3: Runtime
 FROM debian:bookworm-slim
+
+LABEL org.opencontainers.image.source="https://github.com/Humans-Not-Required/blog"
+LABEL org.opencontainers.image.description="Multi-tenant blog platform with markdown and Nostr export"
+LABEL org.opencontainers.image.licenses="MIT"
+
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=backend /app/target/release/blog ./blog
