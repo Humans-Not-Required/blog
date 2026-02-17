@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hnr-blog"
+version = "0.1.0"
+description = "Python SDK for HNR Blog — API-first blogging platform"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.8"
+authors = [{name = "Humans Not Required"}]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+    "Intended Audience :: Developers",
+]
+
+[project.urls]
+Homepage = "https://github.com/Humans-Not-Required/blog"
+Repository = "https://github.com/Humans-Not-Required/blog"
+Documentation = "https://github.com/Humans-Not-Required/blog/tree/main/sdk/python"
+
+[tool.setuptools]
+py-modules = ["blog"]
