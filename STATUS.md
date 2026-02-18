@@ -35,7 +35,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
   - Dark theme matching HNR design system
   - Auth key detection from URL (?key=) + localStorage persistence
 - **Delete blog** - DELETE /api/v1/blogs/{id} cascade deletes all posts, comments, views + FTS/semantic indexes
-- **Tests** - 107 Rust tests (83 integration + 12 unit × 2) + 170 Python SDK integration tests (277 total)
+- **Tests** - 151 Rust tests (127 integration + 12 unit × 2) + 170 Python SDK integration tests (321 total)
 - **Python SDK** — Complete zero-dependency client library (`sdk/python/blog.py`) wrapping all API endpoints. 164 integration tests covering health, blogs, posts, comments, pinning, feeds, search, stats, preview, export, discovery, related posts, error handling, blog/post updates, metadata (word count, reading time), view tracking, pinned ordering, deletion cascade, semantic search, auth edge cases, slug behavior, draft behavior, full lifecycle, multi-blog isolation, post summaries, constructor variants. Fixed `create_comment` field name bug (`author` → `author_name`). README with full API reference.
 - **Documentation** - Comprehensive README (195 lines), detailed llms.txt (all 27 endpoints)
 - **Docker** - 3-stage multi-stage build
