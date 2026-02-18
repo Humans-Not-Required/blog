@@ -34,8 +34,8 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
   - Client-side routing
   - Dark theme matching HNR design system
   - Auth key detection from URL (?key=) + localStorage persistence
-- **Tests** - 100 Rust tests (74 integration + 12 unit + 14 added) + 76 Python SDK integration tests (176 total)
-- **Python SDK** — Complete zero-dependency client library (`sdk/python/blog.py`) wrapping all API endpoints. 76 integration tests covering health, blogs, posts, comments, pinning, feeds, search, stats, preview, export, discovery, related posts, error handling. Fixed `create_comment` field name bug (`author` → `author_name`). README with full API reference.
+- **Tests** - 102 Rust tests (78 integration + 12 unit × 2) + 164 Python SDK integration tests (266 total)
+- **Python SDK** — Complete zero-dependency client library (`sdk/python/blog.py`) wrapping all API endpoints. 164 integration tests covering health, blogs, posts, comments, pinning, feeds, search, stats, preview, export, discovery, related posts, error handling, blog/post updates, metadata (word count, reading time), view tracking, pinned ordering, deletion cascade, semantic search, auth edge cases, slug behavior, draft behavior, full lifecycle, multi-blog isolation, post summaries, constructor variants. Fixed `create_comment` field name bug (`author` → `author_name`). README with full API reference.
 - **Documentation** - Comprehensive README (195 lines), detailed llms.txt (all 27 endpoints)
 - **Docker** - 3-stage multi-stage build
 - **Auth** - Bearer/X-API-Key/?key= (same as kanban)
@@ -131,7 +131,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 
 - ~~**Remove SSE real-time updates**~~ ✅ — Removed EventBus, event stream endpoint (`/blogs/:id/events/stream`), all `bus.emit()` calls from mutation routes, frontend EventSource subscriptions, tokio sync dependency, and SSE references from OpenAPI spec. -208 lines of code. 35 tests pass, zero clippy warnings. Commit: 688660c
 
-*Last updated: 2026-02-17 10:55 UTC — 100 tests passing (24 unit + 76 integration). Security hardened, well-known skills discovery, full documentation. Deployed to staging via ghcr.io.*
+*Last updated: 2026-02-18 08:30 UTC — 266 tests passing (102 Rust + 164 Python SDK). Security hardened, dual skills discovery paths, full documentation. Deployed to staging via ghcr.io. Fixed /api/v1/llms.txt route in main binary.*
 
 ## Incoming directions (2026-02-13T17:49:01Z)
 - Jordan: Cloudflare tunnel/DNS task being archived (he’s rolling out a more permanent solution). No action on my side for now. (task 8479e4ca)
