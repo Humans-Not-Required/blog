@@ -2011,3 +2011,13 @@ fn test_skills_skill_md() {
     assert!(body.contains("Markdown"), "Missing markdown reference");
     assert!(body.contains("FTS5"), "Missing search reference");
 }
+
+#[test]
+fn test_api_v1_skills_skill_md() {
+    let client = test_client();
+    let resp = client.get("/api/v1/skills/SKILL.md").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    assert!(body.starts_with("---"), "Missing YAML frontmatter");
+    assert!(body.contains("name: blog"), "Missing skill name");
+}

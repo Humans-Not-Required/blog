@@ -1439,6 +1439,12 @@ pub fn skills_skill_md() -> (rocket::http::ContentType, &'static str) {
     (rocket::http::ContentType::Markdown, SKILL_MD_CONTENT)
 }
 
+/// GET /skills/SKILL.md — alternate path for agent discoverability
+#[get("/skills/SKILL.md")]
+pub fn api_skills_skill_md() -> (rocket::http::ContentType, &'static str) {
+    (rocket::http::ContentType::Markdown, SKILL_MD_CONTENT)
+}
+
 const SKILLS_INDEX_JSON: &str = r#"{
   "skills": [
     {
