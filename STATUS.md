@@ -34,7 +34,8 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
   - Client-side routing
   - Dark theme matching HNR design system
   - Auth key detection from URL (?key=) + localStorage persistence
-- **Tests** - 102 Rust tests (78 integration + 12 unit × 2) + 164 Python SDK integration tests (266 total)
+- **Delete blog** - DELETE /api/v1/blogs/{id} cascade deletes all posts, comments, views + FTS/semantic indexes
+- **Tests** - 107 Rust tests (83 integration + 12 unit × 2) + 170 Python SDK integration tests (277 total)
 - **Python SDK** — Complete zero-dependency client library (`sdk/python/blog.py`) wrapping all API endpoints. 164 integration tests covering health, blogs, posts, comments, pinning, feeds, search, stats, preview, export, discovery, related posts, error handling, blog/post updates, metadata (word count, reading time), view tracking, pinned ordering, deletion cascade, semantic search, auth edge cases, slug behavior, draft behavior, full lifecycle, multi-blog isolation, post summaries, constructor variants. Fixed `create_comment` field name bug (`author` → `author_name`). README with full API reference.
 - **Documentation** - Comprehensive README (195 lines), detailed llms.txt (all 27 endpoints)
 - **Docker** - 3-stage multi-stage build
@@ -131,7 +132,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 
 - ~~**Remove SSE real-time updates**~~ ✅ — Removed EventBus, event stream endpoint (`/blogs/:id/events/stream`), all `bus.emit()` calls from mutation routes, frontend EventSource subscriptions, tokio sync dependency, and SSE references from OpenAPI spec. -208 lines of code. 35 tests pass, zero clippy warnings. Commit: 688660c
 
-*Last updated: 2026-02-18 08:30 UTC — 266 tests passing (102 Rust + 164 Python SDK). Security hardened, dual skills discovery paths, full documentation. Deployed to staging via ghcr.io. Fixed /api/v1/llms.txt route in main binary.*
+*Last updated: 2026-02-18 08:55 UTC — 277 tests passing (107 Rust + 170 Python SDK). New: DELETE /api/v1/blogs/{id} endpoint with cascade delete. SDK test cleanup prevents test data pollution. 3 published blog posts. Staging DB cleaned (removed 203 SDK test artifacts). Security hardened, dual skills discovery paths, full documentation. Deployed to staging via ghcr.io.*
 
 ## Incoming directions (2026-02-13T17:49:01Z)
 - Jordan: Cloudflare tunnel/DNS task being archived (he’s rolling out a more permanent solution). No action on my side for now. (task 8479e4ca)
