@@ -1320,7 +1320,8 @@ class TestDeleteBlog(unittest.TestCase):
 
     def test_delete_blog_basic(self):
         blog = self.b.create_blog(f"DeleteTest-{ts()}")
-        result = self.b.delete_blog(blog["id"])
+        key = blog["manage_key"]
+        result = self.b.delete_blog(blog["id"], manage_key=key)
         self.assertTrue(result["deleted"])
         with self.assertRaises(NotFoundError):
             self.b.get_blog(blog["id"])
@@ -1328,19 +1329,22 @@ class TestDeleteBlog(unittest.TestCase):
     def test_delete_blog_cascades_posts(self):
         blog = self.b.create_blog(f"CascadeTest-{ts()}")
         bid = blog["id"]
+        key = blog["manage_key"]
+        owner = Blog(BASE_URL, manage_key=key)
         for i in range(3):
-            self.b.create_post(bid, f"Post {i}", "content")
-        result = self.b.delete_blog(bid)
+            owner.create_post(bid, f"Post {i}", "content")
+        result = owner.delete_blog(bid)
         self.assertTrue(result["deleted"])
         self.assertEqual(result["posts_removed"], 3)
 
     def test_delete_blog_without_auth(self):
         blog = self.b.create_blog(f"NoAuth-{ts()}")
+        key = blog["manage_key"]
         no_auth = Blog(BASE_URL)
         with self.assertRaises(AuthError):
             no_auth.delete_blog(blog["id"])
-        # Clean up
-        self.b.delete_blog(blog["id"])
+        # Clean up with the correct key
+        self.b.delete_blog(blog["id"], manage_key=key)
 
     def test_delete_blog_not_found(self):
         with self.assertRaises(NotFoundError):
@@ -1348,17 +1352,19 @@ class TestDeleteBlog(unittest.TestCase):
 
     def test_delete_blog_wrong_key(self):
         blog = self.b.create_blog(f"WrongKey-{ts()}")
+        key = blog["manage_key"]
         wrong = Blog(BASE_URL, manage_key="wrong_key_xyz")
         with self.assertRaises(AuthError):
             wrong.delete_blog(blog["id"])
-        # Clean up
-        self.b.delete_blog(blog["id"])
+        # Clean up with the correct key
+        self.b.delete_blog(blog["id"], manage_key=key)
 
     def test_delete_blog_idempotent(self):
         blog = self.b.create_blog(f"Idempotent-{ts()}")
-        self.b.delete_blog(blog["id"])
+        key = blog["manage_key"]
+        self.b.delete_blog(blog["id"], manage_key=key)
         with self.assertRaises(NotFoundError):
-            self.b.delete_blog(blog["id"])
+            self.b.delete_blog(blog["id"], manage_key=key)
 
 
 if __name__ == "__main__":
