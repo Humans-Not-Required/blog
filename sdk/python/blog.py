@@ -237,6 +237,18 @@ class Blog:
             json_body=body, manage_key=manage_key,
         )
 
+    def delete_blog(
+        self,
+        blog_id: str,
+        *,
+        manage_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """``DELETE /api/v1/blogs/{id}`` — delete a blog and all its posts/comments/views. Auth required."""
+        return self._request(
+            "DELETE", f"/api/v1/blogs/{blog_id}",
+            manage_key=manage_key,
+        )
+
     # ------------------------------------------------------------------
     # Posts
     # ------------------------------------------------------------------

@@ -152,6 +152,50 @@
             "$ref": "#/components/responses/NotFound"
           }
         }
+      },
+      "delete": {
+        "summary": "Delete blog and all content",
+        "description": "Deletes the blog and cascades to all posts, comments, and view records. Auth required.",
+        "operationId": "deleteBlog",
+        "tags": [
+          "blogs"
+        ],
+        "security": [
+          {
+            "manageKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/blogId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Blog deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "boolean"
+                    },
+                    "posts_removed": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
       }
     },
     "/blogs/{blogId}/posts": {

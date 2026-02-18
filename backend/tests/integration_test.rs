@@ -2021,3 +2021,88 @@ fn test_api_v1_skills_skill_md() {
     assert!(body.starts_with("---"), "Missing YAML frontmatter");
     assert!(body.contains("name: blog"), "Missing skill name");
 }
+
+// ── Delete Blog ─────────────────────────────────────────────────────────
+
+#[test]
+fn test_delete_blog() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "DeleteMe");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.delete(format!("/api/v1/blogs/{}", id))
+        .header(auth)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["deleted"], true);
+
+    // Verify blog is gone
+    let resp = client.get(format!("/api/v1/blogs/{}", id)).dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+}
+
+#[test]
+fn test_delete_blog_cascades() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "CascadeDelete");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    // Create 3 posts
+    for i in 0..3 {
+        client.post(format!("/api/v1/blogs/{}/posts", id))
+            .header(ContentType::JSON)
+            .header(auth.clone())
+            .body(format!(r#"{{"title": "Post {}", "status": "published"}}"#, i))
+            .dispatch();
+    }
+
+    // Verify posts exist
+    let resp = client.get(format!("/api/v1/blogs/{}/posts", id))
+        .header(auth.clone())
+        .dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts.len(), 3);
+
+    // Delete blog
+    let resp = client.delete(format!("/api/v1/blogs/{}", id))
+        .header(auth)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["posts_removed"], 3);
+}
+
+#[test]
+fn test_delete_blog_without_auth() {
+    let client = test_client();
+    let (id, _key) = create_blog_helper(&client, "NoAuth");
+
+    let resp = client.delete(format!("/api/v1/blogs/{}", id)).dispatch();
+    assert_eq!(resp.status(), Status::Unauthorized);
+}
+
+#[test]
+fn test_delete_blog_wrong_key() {
+    let client = test_client();
+    let (id, _key) = create_blog_helper(&client, "WrongKey");
+    let wrong_auth = Header::new("Authorization", "Bearer wrong_key_123");
+
+    let resp = client.delete(format!("/api/v1/blogs/{}", id))
+        .header(wrong_auth)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Unauthorized);
+}
+
+#[test]
+fn test_delete_blog_not_found() {
+    let client = test_client();
+    let (_id, key) = create_blog_helper(&client, "ForAuth");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.delete("/api/v1/blogs/nonexistent-id")
+        .header(auth)
+        .dispatch();
+    // verify_blog_key returns 404 when blog doesn't exist (before checking key)
+    assert_eq!(resp.status(), Status::NotFound);
+}

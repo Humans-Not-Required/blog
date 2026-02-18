@@ -86,11 +86,16 @@ class WriteTestCase(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
-        for pid in getattr(cls, "_post_ids", []):
-            try:
-                cls.b.delete_post(cls.blog_id, pid)
-            except Exception:
-                pass
+        # Clean up: delete the entire test blog (cascades to posts/comments/views)
+        try:
+            cls.b.delete_blog(cls.blog_id)
+        except Exception:
+            # Fallback: delete posts individually
+            for pid in getattr(cls, "_post_ids", []):
+                try:
+                    cls.b.delete_post(cls.blog_id, pid)
+                except Exception:
+                    pass
 
     def _post(self, **overrides) -> dict:
         defaults = {
@@ -1300,6 +1305,60 @@ class TestPreviewAdvanced(ReadOnlyTestCase):
     def test_preview_unicode(self):
         result = self.b.preview("日本語 🎉 العربية")
         self.assertIn("🎉", result["html"])
+
+
+# ── Delete Blog ─────────────────────────────────────────────────────────
+
+
+class TestDeleteBlog(unittest.TestCase):
+    """Tests for DELETE /api/v1/blogs/{id} endpoint."""
+
+    def setUp(self):
+        if not MANAGE_KEY:
+            self.skipTest("BLOG_KEY not set — write tests skipped")
+        self.b = Blog(BASE_URL, manage_key=MANAGE_KEY)
+
+    def test_delete_blog_basic(self):
+        blog = self.b.create_blog(f"DeleteTest-{ts()}")
+        result = self.b.delete_blog(blog["id"])
+        self.assertTrue(result["deleted"])
+        with self.assertRaises(NotFoundError):
+            self.b.get_blog(blog["id"])
+
+    def test_delete_blog_cascades_posts(self):
+        blog = self.b.create_blog(f"CascadeTest-{ts()}")
+        bid = blog["id"]
+        for i in range(3):
+            self.b.create_post(bid, f"Post {i}", "content")
+        result = self.b.delete_blog(bid)
+        self.assertTrue(result["deleted"])
+        self.assertEqual(result["posts_removed"], 3)
+
+    def test_delete_blog_without_auth(self):
+        blog = self.b.create_blog(f"NoAuth-{ts()}")
+        no_auth = Blog(BASE_URL)
+        with self.assertRaises(AuthError):
+            no_auth.delete_blog(blog["id"])
+        # Clean up
+        self.b.delete_blog(blog["id"])
+
+    def test_delete_blog_not_found(self):
+        with self.assertRaises(NotFoundError):
+            self.b.delete_blog("nonexistent-blog-id")
+
+    def test_delete_blog_wrong_key(self):
+        blog = self.b.create_blog(f"WrongKey-{ts()}")
+        wrong = Blog(BASE_URL, manage_key="wrong_key_xyz")
+        with self.assertRaises(AuthError):
+            wrong.delete_blog(blog["id"])
+        # Clean up
+        self.b.delete_blog(blog["id"])
+
+    def test_delete_blog_idempotent(self):
+        blog = self.b.create_blog(f"Idempotent-{ts()}")
+        self.b.delete_blog(blog["id"])
+        with self.assertRaises(NotFoundError):
+            self.b.delete_blog(blog["id"])
 
 
 if __name__ == "__main__":

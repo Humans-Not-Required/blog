@@ -53,6 +53,7 @@ pub fn create_rocket(conn: rusqlite::Connection) -> rocket::Rocket<rocket::Build
             routes::list_blogs,
             routes::get_blog,
             routes::update_blog,
+            routes::delete_blog,
             routes::create_post,
             routes::list_posts,
             routes::get_post_by_slug,
