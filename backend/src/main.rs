@@ -83,6 +83,7 @@ fn rocket() -> _ {
             routes::export_html,
             routes::export_nostr,
             routes::api_skills_skill_md,
+            routes::api_llms_txt,
         ])
         .mount("/", routes![routes::llms_txt, routes::skills_index, routes::skills_skill_md])
         .mount("/", rocket::fs::FileServer::from(static_dir).rank(20))

@@ -215,6 +215,28 @@ class Blog:
         """``GET /api/v1/blogs/{id}`` — get a blog by ID."""
         return self._request("GET", f"/api/v1/blogs/{blog_id}")
 
+    def update_blog(
+        self,
+        blog_id: str,
+        *,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        is_public: Optional[bool] = None,
+        manage_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """``PATCH /api/v1/blogs/{id}`` — update a blog. Auth required."""
+        body: Dict[str, Any] = {}
+        if name is not None:
+            body["name"] = name
+        if description is not None:
+            body["description"] = description
+        if is_public is not None:
+            body["is_public"] = is_public
+        return self._request(
+            "PATCH", f"/api/v1/blogs/{blog_id}",
+            json_body=body, manage_key=manage_key,
+        )
+
     # ------------------------------------------------------------------
     # Posts
     # ------------------------------------------------------------------
@@ -228,6 +250,7 @@ class Blog:
         slug: Optional[str] = None,
         tags: Optional[List[str]] = None,
         status: str = "published",
+        summary: Optional[str] = None,
         manage_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """``POST /api/v1/blogs/{id}/posts`` — create a post.
@@ -243,6 +266,8 @@ class Blog:
             body["slug"] = slug
         if tags is not None:
             body["tags"] = tags
+        if summary is not None:
+            body["summary"] = summary
         return self._request(
             "POST", f"/api/v1/blogs/{blog_id}/posts",
             json_body=body, manage_key=manage_key,
@@ -266,6 +291,35 @@ class Blog:
     def get_post(self, blog_id: str, slug: str) -> Dict[str, Any]:
         """``GET /api/v1/blogs/{id}/posts/{slug}`` — get post by slug."""
         return self._request("GET", f"/api/v1/blogs/{blog_id}/posts/{slug}")
+
+    def update_post(
+        self,
+        blog_id: str,
+        post_id: str,
+        *,
+        title: Optional[str] = None,
+        content: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        status: Optional[str] = None,
+        summary: Optional[str] = None,
+        manage_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """``PATCH /api/v1/blogs/{id}/posts/{post_id}`` — update a post. Auth required."""
+        body: Dict[str, Any] = {}
+        if title is not None:
+            body["title"] = title
+        if content is not None:
+            body["content"] = content
+        if tags is not None:
+            body["tags"] = tags
+        if status is not None:
+            body["status"] = status
+        if summary is not None:
+            body["summary"] = summary
+        return self._request(
+            "PATCH", f"/api/v1/blogs/{blog_id}/posts/{post_id}",
+            json_body=body, manage_key=manage_key,
+        )
 
     def delete_post(
         self,
@@ -427,6 +481,11 @@ class Blog:
         data = self._request("GET", "/api/v1/llms.txt")
         return data.decode() if isinstance(data, bytes) else str(data)
 
+    def llms_txt_root(self) -> str:
+        """``GET /llms.txt`` — root-level llms.txt."""
+        data = self._request("GET", "/llms.txt")
+        return data.decode() if isinstance(data, bytes) else str(data)
+
     def openapi(self) -> Dict[str, Any]:
         return self._request("GET", "/api/v1/openapi.json")
 
@@ -435,6 +494,11 @@ class Blog:
 
     def skill_md(self) -> str:
         data = self._request("GET", "/.well-known/skills/blog/SKILL.md")
+        return data.decode() if isinstance(data, bytes) else str(data)
+
+    def skill_md_v1(self) -> str:
+        """``GET /api/v1/skills/SKILL.md`` — alternate skills discovery path."""
+        data = self._request("GET", "/api/v1/skills/SKILL.md")
         return data.decode() if isinstance(data, bytes) else str(data)
 
     def __repr__(self) -> str:

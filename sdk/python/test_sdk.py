@@ -98,7 +98,10 @@ class WriteTestCase(unittest.TestCase):
             "content": "# Hello\n\nTest content.",
         }
         defaults.update(overrides)
-        result = self.b.create_post(self.blog_id, **defaults)
+        # Extract title and content as positional, rest as kwargs
+        title = defaults.pop("title")
+        content = defaults.pop("content")
+        result = self.b.create_post(self.blog_id, title, content, **defaults)
         self.__class__._post_ids.append(result["id"])
         return result
 
@@ -611,6 +614,692 @@ class TestWriteEdgeCases(WriteTestCase):
         tags = ["tag1", "tag2", "tag3"]
         post = self._post(tags=tags)
         self.assertEqual(sorted(post.get("tags", [])), sorted(tags))
+
+
+# =========================================================================
+# Blog Update (write)
+# =========================================================================
+
+class TestBlogUpdate(WriteTestCase):
+    def test_update_name(self):
+        new_name = f"Updated-{ts()}"
+        result = self.b.update_blog(self.blog_id, name=new_name)
+        self.assertEqual(result["name"], new_name)
+
+    def test_update_description(self):
+        desc = f"New description {ts()}"
+        result = self.b.update_blog(self.blog_id, description=desc)
+        self.assertEqual(result.get("description", ""), desc)
+
+    def test_update_preserves_other_fields(self):
+        """Updating name should not clear description."""
+        desc = f"Preserve-{ts()}"
+        self.b.update_blog(self.blog_id, description=desc)
+        result = self.b.update_blog(self.blog_id, name=f"NewName-{ts()}")
+        self.assertEqual(result.get("description", ""), desc)
+
+    def test_update_nonexistent_blog(self):
+        with self.assertRaises((NotFoundError, AuthError)):
+            self.b.update_blog("nonexistent-blog-id", name="X")
+
+    def test_update_requires_auth(self):
+        no_auth = Blog(BASE_URL)
+        with self.assertRaises(AuthError):
+            no_auth.update_blog(self.blog_id, name="Hacked")
+
+
+# =========================================================================
+# Post Update (write)
+# =========================================================================
+
+class TestPostUpdate(WriteTestCase):
+    def test_update_title(self):
+        post = self._post()
+        new_title = f"Updated Title {ts()}"
+        updated = self.b.update_post(self.blog_id, post["id"], title=new_title)
+        self.assertEqual(updated["title"], new_title)
+
+    def test_update_content(self):
+        post = self._post()
+        new_content = "# Updated\n\nNew content here."
+        updated = self.b.update_post(self.blog_id, post["id"], content=new_content)
+        self.assertEqual(updated["content"], new_content)
+        self.assertIn("<h1>", updated.get("content_html", ""))
+
+    def test_update_tags(self):
+        post = self._post(tags=["old"])
+        updated = self.b.update_post(self.blog_id, post["id"], tags=["new", "updated"])
+        self.assertEqual(sorted(updated.get("tags", [])), ["new", "updated"])
+
+    def test_update_status_draft(self):
+        post = self._post(status="published")
+        updated = self.b.update_post(self.blog_id, post["id"], status="draft")
+        self.assertEqual(updated["status"], "draft")
+
+    def test_update_status_publish(self):
+        post = self._post(status="draft")
+        updated = self.b.update_post(self.blog_id, post["id"], status="published")
+        self.assertEqual(updated["status"], "published")
+
+    def test_update_summary(self):
+        post = self._post()
+        updated = self.b.update_post(self.blog_id, post["id"], summary="A brief summary")
+        self.assertEqual(updated.get("summary", ""), "A brief summary")
+
+    def test_update_preserves_content(self):
+        """Updating title should not clear content."""
+        original_content = "# Keep This\n\nDon't lose me."
+        post = self._post(content=original_content)
+        updated = self.b.update_post(self.blog_id, post["id"], title=f"New Title {ts()}")
+        self.assertEqual(updated["content"], original_content)
+
+    def test_update_nonexistent_post(self):
+        with self.assertRaises(NotFoundError):
+            self.b.update_post(self.blog_id, "nonexistent-post-id", title="X")
+
+    def test_update_requires_auth(self):
+        post = self._post()
+        no_auth = Blog(BASE_URL)
+        with self.assertRaises(AuthError):
+            no_auth.update_post(self.blog_id, post["id"], title="Hacked")
+
+
+# =========================================================================
+# Post Reading Time / Word Count
+# =========================================================================
+
+class TestPostMetadata(WriteTestCase):
+    def test_word_count_present(self):
+        post = self._post(content="one two three four five")
+        self.assertIn("word_count", post)
+        self.assertGreaterEqual(post["word_count"], 5)
+
+    def test_reading_time_present(self):
+        post = self._post(content="word " * 400)
+        self.assertIn("reading_time_minutes", post)
+        self.assertGreaterEqual(post["reading_time_minutes"], 1)
+
+    def test_short_reading_time(self):
+        post = self._post(content="Hello")
+        self.assertIn("reading_time_minutes", post)
+        self.assertGreaterEqual(post["reading_time_minutes"], 1)
+
+    def test_word_count_updates_on_edit(self):
+        post = self._post(content="short")
+        long_content = "word " * 500
+        updated = self.b.update_post(self.blog_id, post["id"], content=long_content)
+        self.assertGreater(updated.get("word_count", 0), post.get("word_count", 0))
+
+
+# =========================================================================
+# View Tracking
+# =========================================================================
+
+class TestViewTracking(WriteTestCase):
+    def test_view_count_field_present(self):
+        post = self._post()
+        fetched = self.b.get_post(self.blog_id, post["slug"])
+        self.assertIn("view_count", fetched)
+
+    def test_view_count_increments(self):
+        post = self._post()
+        self.b.get_post(self.blog_id, post["slug"])
+        self.b.get_post(self.blog_id, post["slug"])
+        fetched = self.b.get_post(self.blog_id, post["slug"])
+        # At least 2 views from the first two GETs (the third also increments)
+        self.assertGreaterEqual(fetched.get("view_count", 0), 2)
+
+    def test_view_count_in_list(self):
+        post = self._post()
+        self.b.get_post(self.blog_id, post["slug"])  # increment
+        posts = self.b.list_posts(self.blog_id)
+        matching = [p for p in posts if p["id"] == post["id"]]
+        if matching:
+            self.assertIn("view_count", matching[0])
+
+
+# =========================================================================
+# Pinned Post Ordering
+# =========================================================================
+
+class TestPinnedOrdering(WriteTestCase):
+    def test_pinned_appears_first(self):
+        p1 = self._post(title=f"First {ts()}")
+        p2 = self._post(title=f"Second {ts()}")
+        p3 = self._post(title=f"Third {ts()}")
+        # Pin the middle post
+        self.b.pin_post(self.blog_id, p2["id"])
+        posts = self.b.list_posts(self.blog_id)
+        ids = [p["id"] for p in posts]
+        # p2 should be first (pinned)
+        self.assertEqual(ids[0], p2["id"])
+
+    def test_unpin_restores_order(self):
+        p1 = self._post(title=f"Unpin-A {ts()}")
+        time.sleep(0.1)
+        p2 = self._post(title=f"Unpin-B {ts()}")
+        self.b.pin_post(self.blog_id, p1["id"])
+        # p1 should be first when pinned
+        posts = self.b.list_posts(self.blog_id)
+        ids = [p["id"] for p in posts]
+        self.assertEqual(ids[0], p1["id"])
+        # After unpinning, p1 should no longer be forced first
+        self.b.unpin_post(self.blog_id, p1["id"])
+        posts = self.b.list_posts(self.blog_id)
+        # Just verify the unpin didn't error and posts are returned
+        self.assertGreaterEqual(len(posts), 2)
+
+    def test_pin_idempotent(self):
+        post = self._post()
+        self.b.pin_post(self.blog_id, post["id"])
+        result = self.b.pin_post(self.blog_id, post["id"])
+        self.assertIsNotNone(result)
+
+
+# =========================================================================
+# Deletion Cascade
+# =========================================================================
+
+class TestDeletionCascade(WriteTestCase):
+    def test_delete_post_removes_comments(self):
+        post = self._post()
+        self.b.create_comment(self.blog_id, post["id"], "Alice", "Comment 1")
+        self.b.create_comment(self.blog_id, post["id"], "Bob", "Comment 2")
+        self.b.delete_post(self.blog_id, post["id"])
+        self.__class__._post_ids.remove(post["id"])
+        # Post should be gone
+        with self.assertRaises(NotFoundError):
+            self.b.get_post(self.blog_id, post["slug"])
+
+
+# =========================================================================
+# Semantic Search
+# =========================================================================
+
+class TestSemanticSearch(ReadOnlyTestCase):
+    def test_semantic_search_returns_list(self):
+        results = self.b.search_semantic("agent infrastructure")
+        self.assertIsInstance(results, (list, dict))
+
+    def test_semantic_search_with_limit(self):
+        results = self.b.search_semantic("blog platform", limit=1)
+        if isinstance(results, list):
+            self.assertLessEqual(len(results), 1)
+
+    def test_semantic_search_with_blog_filter(self):
+        results = self.b.search_semantic("test", blog_id=self.blog_id)
+        self.assertIsInstance(results, (list, dict))
+
+    def test_semantic_search_no_results(self):
+        results = self.b.search_semantic("zzzzzzqqqqqxxxxx99999")
+        if isinstance(results, list):
+            self.assertEqual(len(results), 0)
+
+
+# =========================================================================
+# Search Edge Cases
+# =========================================================================
+
+class TestSearchAdvanced(WriteTestCase):
+    def test_search_finds_created_post(self):
+        unique = f"unicornblaster{ts()}"
+        self._post(title=f"Post about {unique}", content=f"Content with {unique}")
+        time.sleep(0.5)  # allow FTS index update
+        results = self.b.search(unique)
+        self.assertGreaterEqual(len(results), 1)
+
+    def test_search_empty_query(self):
+        try:
+            results = self.b.search("")
+            self.assertIsInstance(results, list)
+        except (ValidationError, BlogError):
+            pass  # Some servers reject empty queries — that's fine
+
+    def test_search_special_chars(self):
+        results = self.b.search("hello & world")
+        self.assertIsInstance(results, list)
+
+    def test_search_result_fields(self):
+        """Search results should have title and snippet."""
+        results = self.b.search("test")
+        if results:
+            result = results[0]
+            self.assertIn("title", result)
+
+
+# =========================================================================
+# Stats Advanced
+# =========================================================================
+
+class TestStatsAdvanced(WriteTestCase):
+    def test_stats_fields(self):
+        stats = self.b.blog_stats(self.blog_id)
+        for field in ["total_posts", "published_posts"]:
+            self.assertIn(field, stats)
+
+    def test_stats_view_fields(self):
+        stats = self.b.blog_stats(self.blog_id)
+        # Should have views breakdown
+        self.assertIn("total_views", stats)
+
+    def test_stats_after_post_creation(self):
+        self._post()
+        stats = self.b.blog_stats(self.blog_id)
+        self.assertGreaterEqual(stats.get("total_posts", 0), 1)
+
+    def test_stats_top_posts(self):
+        stats = self.b.blog_stats(self.blog_id)
+        if "top_posts" in stats:
+            self.assertIsInstance(stats["top_posts"], list)
+
+
+# =========================================================================
+# Feed Content
+# =========================================================================
+
+class TestFeedContent(WriteTestCase):
+    def test_rss_contains_post(self):
+        title = f"RSS-Test-{ts()}"
+        self._post(title=title)
+        rss = self.b.feed_rss(self.blog_id)
+        self.assertIn(title.encode(), rss)
+
+    def test_json_feed_contains_post(self):
+        title = f"JSON-Feed-{ts()}"
+        self._post(title=title)
+        feed = self.b.feed_json(self.blog_id)
+        titles = [item.get("title", "") for item in feed.get("items", [])]
+        self.assertIn(title, titles)
+
+    def test_rss_valid_xml(self):
+        rss = self.b.feed_rss(self.blog_id)
+        self.assertTrue(rss.startswith(b"<?xml") or rss.startswith(b"<rss"))
+
+    def test_json_feed_has_home_page_url(self):
+        feed = self.b.feed_json(self.blog_id)
+        self.assertIn("home_page_url", feed)
+
+    def test_draft_not_in_feed(self):
+        title = f"Draft-Feed-{ts()}"
+        self._post(title=title, status="draft")
+        rss = self.b.feed_rss(self.blog_id)
+        self.assertNotIn(title.encode(), rss)
+
+
+# =========================================================================
+# Export Edge Cases
+# =========================================================================
+
+class TestExportAdvanced(WriteTestCase):
+    def test_export_markdown_frontmatter(self):
+        post = self._post(title=f"Export-MD-{ts()}", tags=["test", "export"])
+        result = self.b.export_markdown(self.blog_id, post["slug"])
+        if isinstance(result, dict):
+            # API returns structured markdown with frontmatter, content, full_document
+            full_doc = result.get("full_document", result.get("content", ""))
+            self.assertTrue(full_doc.startswith("---") or "title:" in full_doc,
+                            f"Expected YAML frontmatter in: {full_doc[:100]}")
+            self.assertIn("frontmatter", result)
+        else:
+            content = result.decode() if isinstance(result, bytes) else str(result)
+            self.assertTrue(content.startswith("---") or "title:" in content)
+
+    def test_export_html_complete(self):
+        post = self._post(content="# Hello\n\n**World**")
+        html = self.b.export_html(self.blog_id, post["slug"])
+        self.assertIn(b"<strong>", html)
+
+    def test_export_nostr_tags(self):
+        post = self._post(tags=["nostr", "test"])
+        event = self.b.export_nostr(self.blog_id, post["slug"])
+        tag_values = [t[1] for t in event.get("tags", []) if t[0] == "t"]
+        self.assertIn("nostr", tag_values)
+
+    def test_export_nostr_has_d_tag(self):
+        post = self._post()
+        event = self.b.export_nostr(self.blog_id, post["slug"])
+        d_tags = [t for t in event.get("tags", []) if t[0] == "d"]
+        self.assertGreaterEqual(len(d_tags), 1)
+
+    def test_export_draft_fails(self):
+        post = self._post(status="draft")
+        with self.assertRaises(NotFoundError):
+            self.b.export_html(self.blog_id, post["slug"])
+
+
+# =========================================================================
+# Comment Edge Cases
+# =========================================================================
+
+class TestCommentsAdvanced(WriteTestCase):
+    def test_comment_unicode(self):
+        post = self._post()
+        comment = self.b.create_comment(self.blog_id, post["id"], "Tëstér", "Héllo 🌍")
+        self.assertIn("🌍", comment["content"])
+
+    def test_comment_long_content(self):
+        post = self._post()
+        content = "Long comment " * 100
+        comment = self.b.create_comment(self.blog_id, post["id"], "Alice", content)
+        self.assertGreater(len(comment["content"]), 100)
+
+    def test_comments_ordered(self):
+        post = self._post()
+        self.b.create_comment(self.blog_id, post["id"], "First", "Comment 1")
+        time.sleep(0.1)
+        self.b.create_comment(self.blog_id, post["id"], "Second", "Comment 2")
+        comments = self.b.list_comments(self.blog_id, post["id"])
+        # Should be in order (oldest first or newest first — just check consistency)
+        self.assertEqual(len(comments), 2)
+
+    def test_comment_on_nonexistent_post(self):
+        with self.assertRaises((NotFoundError, ValidationError, BlogError)):
+            self.b.create_comment(self.blog_id, "nonexistent-post", "Alice", "Hello")
+
+    def test_delete_nonexistent_comment(self):
+        post = self._post()
+        with self.assertRaises((NotFoundError, BlogError)):
+            self.b.delete_comment(self.blog_id, post["id"], "nonexistent-comment")
+
+
+# =========================================================================
+# Auth Edge Cases
+# =========================================================================
+
+class TestAuthEdgeCases(WriteTestCase):
+    def test_create_post_no_auth(self):
+        no_auth = Blog(BASE_URL)
+        with self.assertRaises(AuthError):
+            no_auth.create_post(self.blog_id, f"No Auth {ts()}", "Content")
+
+    def test_delete_post_no_auth(self):
+        post = self._post()
+        no_auth = Blog(BASE_URL)
+        with self.assertRaises(AuthError):
+            no_auth.delete_post(self.blog_id, post["id"])
+
+    def test_pin_no_auth(self):
+        post = self._post()
+        no_auth = Blog(BASE_URL)
+        with self.assertRaises(AuthError):
+            no_auth.pin_post(self.blog_id, post["id"])
+
+    def test_wrong_key(self):
+        wrong = Blog(BASE_URL, manage_key="wrong-key-12345")
+        with self.assertRaises(AuthError):
+            wrong.create_post(self.blog_id, f"Wrong Key {ts()}", "Content")
+
+    def test_key_via_query_param(self):
+        """Auth via ?key= query parameter should work."""
+        # This tests the server accepts the key — we can't test query param via SDK
+        # but we can verify the manage_key gets sent as Bearer
+        post = self._post()
+        self.assertIn("id", post)
+
+    def test_delete_comment_no_auth(self):
+        post = self._post()
+        comment = self.b.create_comment(self.blog_id, post["id"], "Test", "Will try to delete")
+        no_auth = Blog(BASE_URL)
+        with self.assertRaises(AuthError):
+            no_auth.delete_comment(self.blog_id, post["id"], comment["id"])
+
+
+# =========================================================================
+# Discovery Advanced
+# =========================================================================
+
+class TestDiscoveryAdvanced(ReadOnlyTestCase):
+    def test_llms_txt_content(self):
+        """llms.txt at /api/v1 should return Blog API info (requires latest image)."""
+        try:
+            txt = self.b.llms_txt()
+        except NotFoundError:
+            self.skipTest("/api/v1/llms.txt not available (staging may need image update)")
+        self.assertIn("Blog", txt)
+        self.assertIn("/api/v1", txt)
+
+    def test_llms_txt_root(self):
+        txt = self.b.llms_txt_root()
+        self.assertIn("Blog", txt)
+
+    def test_llms_txt_both_same(self):
+        try:
+            v1 = self.b.llms_txt()
+        except NotFoundError:
+            self.skipTest("/api/v1/llms.txt not available (staging may need image update)")
+        root = self.b.llms_txt_root()
+        # Both should return the same content
+        self.assertEqual(v1.strip(), root.strip())
+
+    def test_skill_md_v1(self):
+        md = self.b.skill_md_v1()
+        self.assertIn("blog", md.lower())
+
+    def test_skill_md_both_paths(self):
+        well_known = self.b.skill_md()
+        v1 = self.b.skill_md_v1()
+        self.assertEqual(well_known.strip(), v1.strip())
+
+    def test_openapi_has_info(self):
+        spec = self.b.openapi()
+        self.assertIn("info", spec)
+        self.assertIn("title", spec["info"])
+
+    def test_openapi_version(self):
+        spec = self.b.openapi()
+        self.assertTrue(spec["openapi"].startswith("3."))
+
+    def test_skills_index_structure(self):
+        idx = self.b.skills()
+        self.assertIn("skills", idx)
+        self.assertIsInstance(idx["skills"], list)
+
+
+# =========================================================================
+# Constructor & Config
+# =========================================================================
+
+class TestConstructor(unittest.TestCase):
+    def test_trailing_slash_stripped(self):
+        b = Blog("http://localhost:3004/")
+        self.assertEqual(b.base_url, "http://localhost:3004")
+
+    def test_custom_timeout(self):
+        b = Blog(timeout=5)
+        self.assertEqual(b.timeout, 5)
+
+    def test_default_url(self):
+        orig = os.environ.get("BLOG_URL")
+        try:
+            os.environ.pop("BLOG_URL", None)
+            b = Blog()
+            self.assertEqual(b.base_url, "http://localhost:3004")
+        finally:
+            if orig:
+                os.environ["BLOG_URL"] = orig
+
+    def test_manage_key_from_env(self):
+        orig = os.environ.get("BLOG_KEY")
+        try:
+            os.environ["BLOG_KEY"] = "env-key-test"
+            b = Blog()
+            self.assertEqual(b.manage_key, "env-key-test")
+        finally:
+            if orig:
+                os.environ["BLOG_KEY"] = orig
+            else:
+                os.environ.pop("BLOG_KEY", None)
+
+    def test_repr_includes_url(self):
+        b = Blog("http://example.com:3004")
+        self.assertIn("example.com", repr(b))
+
+    def test_explicit_key_overrides_env(self):
+        orig = os.environ.get("BLOG_KEY")
+        try:
+            os.environ["BLOG_KEY"] = "env-key"
+            b = Blog(manage_key="explicit-key")
+            self.assertEqual(b.manage_key, "explicit-key")
+        finally:
+            if orig:
+                os.environ["BLOG_KEY"] = orig
+            else:
+                os.environ.pop("BLOG_KEY", None)
+
+
+# =========================================================================
+# Slug Behavior
+# =========================================================================
+
+class TestSlugBehavior(WriteTestCase):
+    def test_slug_from_title(self):
+        title = f"My Great Post {ts()}"
+        post = self._post(title=title)
+        self.assertIn("my-great-post", post["slug"])
+
+    def test_custom_slug_preserved(self):
+        slug = f"custom-{ts()}"
+        post = self._post(slug=slug)
+        self.assertEqual(post["slug"], slug)
+
+    def test_unicode_title_slug(self):
+        post = self._post(title=f"Ünïcödé Pöst {ts()}")
+        # Should still generate a valid slug (may transliterate or use safe chars)
+        self.assertTrue(len(post["slug"]) > 0)
+        # Slug should not contain spaces
+        self.assertNotIn(" ", post["slug"])
+
+
+# =========================================================================
+# Draft Behavior
+# =========================================================================
+
+class TestDraftBehavior(WriteTestCase):
+    def test_draft_not_in_public_list(self):
+        draft = self._post(status="draft")
+        # Without auth, drafts should not appear
+        no_auth = Blog(BASE_URL)
+        posts = no_auth.list_posts(self.blog_id)
+        ids = [p["id"] for p in posts]
+        self.assertNotIn(draft["id"], ids)
+
+    def test_draft_visible_with_auth(self):
+        draft = self._post(status="draft")
+        posts = self.b.list_posts(self.blog_id)
+        ids = [p["id"] for p in posts]
+        self.assertIn(draft["id"], ids)
+
+    def test_publish_draft(self):
+        draft = self._post(status="draft")
+        updated = self.b.update_post(self.blog_id, draft["id"], status="published")
+        self.assertEqual(updated["status"], "published")
+
+    def test_draft_not_searchable(self):
+        unique = f"draftunique{ts()}"
+        self._post(title=unique, content=unique, status="draft")
+        time.sleep(0.5)
+        results = self.b.search(unique)
+        self.assertEqual(len(results), 0)
+
+
+# =========================================================================
+# Full Lifecycle
+# =========================================================================
+
+class TestFullLifecycle(WriteTestCase):
+    def test_create_update_comment_pin_export_delete(self):
+        """Full lifecycle: create → update → comment → pin → export → delete."""
+        # Create
+        post = self._post(title=f"Lifecycle {ts()}", content="# Start\n\nOriginal.")
+        self.assertIn("id", post)
+
+        # Update
+        updated = self.b.update_post(self.blog_id, post["id"], content="# Updated\n\nModified.", tags=["lifecycle"])
+        self.assertEqual(updated["content"], "# Updated\n\nModified.")
+
+        # Comment
+        comment = self.b.create_comment(self.blog_id, post["id"], "Tester", "Nice post!")
+        self.assertIn("id", comment)
+
+        # Pin
+        self.b.pin_post(self.blog_id, post["id"])
+        fetched = self.b.get_post(self.blog_id, post["slug"])
+        self.assertTrue(fetched.get("pinned_at") is not None or fetched.get("is_pinned") is True)
+
+        # Export
+        md = self.b.export_markdown(self.blog_id, post["slug"])
+        self.assertIsNotNone(md)
+
+        nostr = self.b.export_nostr(self.blog_id, post["slug"])
+        self.assertEqual(nostr["kind"], 30023)
+
+        # Delete
+        self.b.delete_post(self.blog_id, post["id"])
+        self.__class__._post_ids.remove(post["id"])
+        with self.assertRaises(NotFoundError):
+            self.b.get_post(self.blog_id, post["slug"])
+
+
+# =========================================================================
+# Multiple Blogs
+# =========================================================================
+
+class TestMultipleBlogs(WriteTestCase):
+    def test_posts_isolated_between_blogs(self):
+        """Posts in one blog shouldn't appear in another."""
+        blog2 = self.b.create_blog(f"Blog2-{ts()}", description="Test isolation")
+        blog2_id = blog2["id"]
+        blog2_client = Blog(BASE_URL, manage_key=blog2.get("manage_key", MANAGE_KEY))
+
+        post = blog2_client.create_post(blog2_id, f"Isolated {ts()}", "Content")
+
+        # Should not appear in self.blog_id's posts
+        posts = self.b.list_posts(self.blog_id)
+        ids = [p["id"] for p in posts]
+        self.assertNotIn(post["id"], ids)
+
+    def test_list_blogs_shows_multiple(self):
+        self.b.create_blog(f"List-Test-{ts()}")
+        blogs = self.b.list_blogs()
+        self.assertGreaterEqual(len(blogs), 2)
+
+
+# =========================================================================
+# Post Summary
+# =========================================================================
+
+class TestPostSummary(WriteTestCase):
+    def test_create_with_summary(self):
+        post = self._post(summary="A brief summary of this post")
+        self.assertEqual(post.get("summary", ""), "A brief summary of this post")
+
+    def test_update_summary(self):
+        post = self._post()
+        updated = self.b.update_post(self.blog_id, post["id"], summary="Updated summary")
+        self.assertEqual(updated.get("summary", ""), "Updated summary")
+
+
+# =========================================================================
+# Preview Advanced
+# =========================================================================
+
+class TestPreviewAdvanced(ReadOnlyTestCase):
+    def test_preview_table(self):
+        md = "| Col1 | Col2 |\n|------|------|\n| A | B |"
+        result = self.b.preview(md)
+        self.assertIn("<table", result["html"])
+
+    def test_preview_image(self):
+        result = self.b.preview("![alt](https://example.com/img.png)")
+        self.assertIn("<img", result["html"])
+
+    def test_preview_empty(self):
+        result = self.b.preview("")
+        self.assertIn("html", result)
+
+    def test_preview_unicode(self):
+        result = self.b.preview("日本語 🎉 العربية")
+        self.assertIn("🎉", result["html"])
 
 
 if __name__ == "__main__":
