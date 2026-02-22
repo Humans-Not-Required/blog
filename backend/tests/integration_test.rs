@@ -368,7 +368,19 @@ fn test_llms_txt() {
     let resp = client.get("/llms.txt").dispatch();
     assert_eq!(resp.status(), Status::Ok);
     let body = resp.into_string().unwrap();
-    assert!(body.contains("Blog Platform API"));
+    assert!(body.contains("# Blog Platform"));
+}
+
+#[test]
+fn test_skill_md_root() {
+    let client = test_client();
+    let skill_resp = client.get("/SKILL.md").dispatch();
+    assert_eq!(skill_resp.status(), Status::Ok);
+    let skill_body = skill_resp.into_string().unwrap();
+    assert!(skill_body.contains("# Blog Platform"));
+    let llms_resp = client.get("/llms.txt").dispatch();
+    let llms_body = llms_resp.into_string().unwrap();
+    assert_eq!(skill_body, llms_body, "llms.txt should alias SKILL.md");
 }
 
 #[test]
@@ -377,7 +389,7 @@ fn test_api_llms_txt() {
     let resp = client.get("/api/v1/llms.txt").dispatch();
     assert_eq!(resp.status(), Status::Ok);
     let body = resp.into_string().unwrap();
-    assert!(body.contains("Blog Platform API"));
+    assert!(body.contains("# Blog Platform"));
 }
 
 #[test]
@@ -2004,12 +2016,9 @@ fn test_skills_skill_md() {
     let resp = client.get("/.well-known/skills/blog/SKILL.md").dispatch();
     assert_eq!(resp.status(), Status::Ok);
     let body = resp.into_string().unwrap();
-    assert!(body.starts_with("---"), "Missing YAML frontmatter");
-    assert!(body.contains("name: blog"), "Missing skill name");
+    assert!(body.contains("# Blog Platform"), "Missing title");
     assert!(body.contains("## Quick Start"), "Missing Quick Start");
     assert!(body.contains("## Auth Model"), "Missing Auth Model");
-    assert!(body.contains("Markdown"), "Missing markdown reference");
-    assert!(body.contains("FTS5"), "Missing search reference");
 }
 
 #[test]
@@ -2018,8 +2027,7 @@ fn test_api_v1_skills_skill_md() {
     let resp = client.get("/api/v1/skills/SKILL.md").dispatch();
     assert_eq!(resp.status(), Status::Ok);
     let body = resp.into_string().unwrap();
-    assert!(body.starts_with("---"), "Missing YAML frontmatter");
-    assert!(body.contains("name: blog"), "Missing skill name");
+    assert!(body.contains("# Blog Platform"), "Missing title");
 }
 
 // ── Delete Blog ─────────────────────────────────────────────────────────

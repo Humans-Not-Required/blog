@@ -86,7 +86,7 @@ fn rocket() -> _ {
             routes::api_skills_skill_md,
             routes::api_llms_txt,
         ])
-        .mount("/", routes![routes::llms_txt, routes::skills_index, routes::skills_skill_md])
+        .mount("/", routes![routes::skill_md, routes::llms_txt, routes::skills_index, routes::skills_skill_md])
         .mount("/", rocket::fs::FileServer::from(static_dir).rank(20))
         .register("/", catchers![routes::not_found, routes::internal_error, routes::unauthorized, routes::too_many_requests])
 }
