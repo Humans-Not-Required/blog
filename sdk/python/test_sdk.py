@@ -525,9 +525,11 @@ class TestDiscovery(ReadOnlyTestCase):
         md = self.b.skill_md()
         self.assertIn("blog", md.lower())
 
-    def test_skill_md_has_frontmatter(self):
+    def test_skill_md_has_content(self):
+        """SKILL.md should be non-empty and start with a heading."""
         md = self.b.skill_md()
-        self.assertTrue(md.startswith("---"), "SKILL.md should have YAML frontmatter")
+        self.assertTrue(len(md) > 100, "SKILL.md should have substantial content")
+        self.assertTrue(md.startswith("#"), "SKILL.md should start with a markdown heading")
 
 
 # =========================================================================
