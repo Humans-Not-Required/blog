@@ -14,6 +14,7 @@ COPY backend/Cargo.toml backend/Cargo.lock* ./
 RUN mkdir src && echo 'fn main() {}' > src/main.rs && cargo build --release 2>/dev/null || true
 COPY backend/src ./src
 COPY backend/openapi.json ./openapi.json
+COPY SKILL.md ./SKILL.md
 RUN touch src/**/*.rs src/*.rs 2>/dev/null || true && cargo build --release
 
 # Stage 3: Runtime
