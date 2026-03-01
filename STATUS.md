@@ -132,7 +132,18 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 
 - ~~**Remove SSE real-time updates**~~ ✅ — Removed EventBus, event stream endpoint (`/blogs/:id/events/stream`), all `bus.emit()` calls from mutation routes, frontend EventSource subscriptions, tokio sync dependency, and SSE references from OpenAPI spec. -208 lines of code. 35 tests pass, zero clippy warnings. Commit: 688660c
 
-*Last updated: 2026-02-18 08:55 UTC — 322 tests passing (152 Rust + 170 Python SDK). New: DELETE /api/v1/blogs/{id} endpoint with cascade delete. SDK test cleanup prevents test data pollution. 3 published blog posts. Staging DB cleaned (removed 203 SDK test artifacts). Security hardened, dual skills discovery paths, full documentation. Deployed to staging via ghcr.io.*
+### Completed (2026-03-01 — Frontend Polish Session)
+
+- ~~**Aesthetics overhaul**~~ ✅ — Light/dark theme with proper CSS, zero inline styles
+- ~~**Component decomposition**~~ ✅ — App.jsx split from 952→66 lines into 8 focused components
+- ~~**Dynamic document titles + view counts**~~ ✅ — Title updates per page, view count display, select styling
+- ~~**Code copy buttons + heading anchors + TOC**~~ ✅ — Copy-to-clipboard on code blocks, anchor links on headings, auto-generated table of contents
+- ~~**Search snippets with highlights**~~ ✅ — FTS results show highlighted snippets
+- ~~**Semantic search toggle on home page**~~ ✅ — Users can switch between FTS and semantic search
+- ~~**Markdown editor enhancements**~~ ✅ — Toolbar (bold/italic/link/code/etc), tab indent, word count, unsaved changes warning
+- Cleaned up stale WIP components, standardized .gitignore
+
+*Last updated: 2026-03-01 07:10 UTC — 152 Rust tests + 170 Python SDK tests (322 total). All CI green. Zero clippy warnings. Staging deployed and healthy. Project is feature-complete and polish-complete — only remaining item is Cloudflare DNS (Jordan handling).*
 
 ## Incoming directions (2026-02-13T17:49:01Z)
 - Jordan: Cloudflare tunnel/DNS task being archived (he’s rolling out a more permanent solution). No action on my side for now. (task 8479e4ca)
