@@ -828,3 +828,9 @@ input:focus, textarea:focus, select:focus {
 .comment-date { font-size: 0.8rem; }
 
 .comment-submit-hint { font-size: 0.75rem; color: var(--text-faint); }
+
+/* ─── Post Card Tags ─── */
+
+.post-card__tags { margin-top: 8px; }
+.post-card__pin { margin-right: 4px; }
+.related-post__tags { margin-top: 6px; }
