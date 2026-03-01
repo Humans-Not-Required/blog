@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import './App.css';
 
 const API = '/api/v1';
 
@@ -94,85 +95,49 @@ function useEscapeKey(handler) {
   }, [handler]);
 }
 
+// ─── Theme ───
+
+function getInitialTheme() {
+  const saved = localStorage.getItem('hnr_blog_theme');
+  if (saved) return saved;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
+function useTheme() {
+  const [theme, setTheme] = useState(getInitialTheme);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('hnr_blog_theme', theme);
+
+    // Toggle highlight.js theme
+    const lightHl = document.getElementById('hljs-light');
+    const darkHl = document.getElementById('hljs-dark');
+    if (lightHl) lightHl.disabled = theme === 'dark';
+    if (darkHl) darkHl.disabled = theme === 'light';
+  }, [theme]);
+
+  const toggle = useCallback(() => {
+    setTheme(t => t === 'dark' ? 'light' : 'dark');
+  }, []);
+
+  return [theme, toggle];
+}
+
+const modKey = typeof navigator !== 'undefined' && (navigator.platform?.includes('Mac') || navigator.userAgent?.includes('Mac')) ? '⌘' : 'Ctrl';
+
 // ─── SVG Logo ───
 
 function BlogLogo({ size = 24 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="2" y="3" width="20" height="18" rx="2" stroke="#60a5fa" strokeWidth="1.5" fill="none" />
-      <line x1="6" y1="8" x2="18" y2="8" stroke="#60a5fa" strokeWidth="1.5" strokeLinecap="round" />
-      <line x1="6" y1="12" x2="15" y2="12" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" />
-      <line x1="6" y1="16" x2="12" y2="16" stroke="#94a3b8" strokeWidth="1.5" strokeLinecap="round" />
+      <rect x="2" y="3" width="20" height="18" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none" />
+      <line x1="6" y1="8" x2="18" y2="8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="6" y1="12" x2="15" y2="12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.5" />
+      <line x1="6" y1="16" x2="12" y2="16" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.5" />
     </svg>
   );
 }
-
-// ─── Styles ───
-
-const s = {
-  app: { minHeight: '100vh', background: '#0f172a' },
-  header: {
-    background: '#1e293b', borderBottom: '1px solid #334155',
-    padding: '10px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    position: 'sticky', top: 0, zIndex: 100,
-  },
-  logo: {
-    display: 'flex', alignItems: 'center', gap: '8px',
-    fontSize: '1.1rem', fontWeight: 700, color: '#e2e8f0',
-    cursor: 'pointer', textDecoration: 'none', userSelect: 'none',
-  },
-  container: { maxWidth: '800px', margin: '0 auto', padding: '24px 16px' },
-  card: {
-    background: '#1e293b', border: '1px solid #334155', borderRadius: '8px',
-    padding: '20px', marginBottom: '16px', transition: 'border-color 0.15s',
-  },
-  cardHover: { borderColor: '#475569' },
-  btn: (primary) => ({
-    padding: '8px 16px', borderRadius: '6px', border: 'none', cursor: 'pointer',
-    fontSize: '0.875rem', fontWeight: 500, transition: 'background 0.15s, opacity 0.15s',
-    background: primary ? '#3b82f6' : '#334155', color: '#e2e8f0',
-    opacity: 1,
-  }),
-  btnSmall: (primary) => ({
-    padding: '6px 12px', borderRadius: '6px', border: 'none', cursor: 'pointer',
-    fontSize: '0.8rem', fontWeight: 500, transition: 'background 0.15s',
-    background: primary ? '#3b82f6' : '#334155', color: '#e2e8f0',
-  }),
-  input: {
-    width: '100%', padding: '8px 12px', borderRadius: '6px',
-    border: '1px solid #475569', background: '#0f172a', color: '#e2e8f0',
-    fontSize: '0.9rem', marginBottom: '8px', outline: 'none',
-    transition: 'border-color 0.15s',
-  },
-  textarea: {
-    width: '100%', padding: '8px 12px', borderRadius: '6px',
-    border: '1px solid #475569', background: '#0f172a', color: '#e2e8f0',
-    fontSize: '0.9rem', minHeight: '200px', fontFamily: 'monospace',
-    marginBottom: '8px', resize: 'vertical', outline: 'none',
-    transition: 'border-color 0.15s',
-  },
-  tag: {
-    display: 'inline-block', padding: '2px 8px', borderRadius: '12px',
-    background: '#1e3a5f', color: '#93c5fd', fontSize: '0.75rem', marginRight: '4px',
-  },
-  link: { color: '#60a5fa', textDecoration: 'none', cursor: 'pointer' },
-  muted: { color: '#94a3b8', fontSize: '0.85rem' },
-  badge: (color) => ({
-    display: 'inline-block', padding: '2px 8px', borderRadius: '4px',
-    background: color === 'green' ? '#065f46' : '#78350f',
-    color: color === 'green' ? '#6ee7b7' : '#fbbf24',
-    fontSize: '0.75rem', fontWeight: 600,
-  }),
-  urlBox: {
-    background: '#0f172a', border: '1px solid #334155', borderRadius: '6px',
-    padding: '8px 12px', marginBottom: '8px', display: 'flex',
-    alignItems: 'center', justifyContent: 'space-between', gap: '8px',
-  },
-  urlText: {
-    fontSize: '0.8rem', fontFamily: 'monospace', color: '#94a3b8',
-    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1,
-  },
-};
 
 // ─── Components ───
 
@@ -185,37 +150,25 @@ function CopyButton({ text }) {
     });
   };
   return (
-    <button
-      style={{ ...s.btnSmall(), minWidth: '56px', fontSize: '0.75rem' }}
-      onClick={handleCopy}
-    >
+    <button className="btn btn--sm btn--copy" onClick={handleCopy}>
       {copied ? '✓ Copied' : 'Copy'}
     </button>
   );
 }
 
-function Header({ onNavigate }) {
+function Header({ onNavigate, theme, onToggleTheme }) {
   return (
-    <div style={s.header}>
-      <div style={s.logo} onClick={() => onNavigate('home')}>
+    <div className="header">
+      <div className="header__logo" onClick={() => onNavigate('home')}>
         <BlogLogo size={22} />
         <span>HNR Blog</span>
       </div>
-      <button style={s.btn(true)} onClick={() => onNavigate('create')}>New Blog</button>
-    </div>
-  );
-}
-
-function HoverCard({ children, style, onClick }) {
-  const [hovered, setHovered] = useState(false);
-  return (
-    <div
-      style={{ ...s.card, ...(hovered ? s.cardHover : {}), ...(onClick ? { cursor: 'pointer' } : {}), ...style }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onClick={onClick}
-    >
-      {children}
+      <div className="header__actions">
+        <button className="theme-toggle" onClick={onToggleTheme} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
+          {theme === 'dark' ? '☀️' : '🌙'}
+        </button>
+        <button className="btn btn--primary" onClick={() => onNavigate('create')}>New Blog</button>
+      </div>
     </div>
   );
 }
@@ -232,7 +185,6 @@ function Home({ onNavigate }) {
 
   const handleGo = () => {
     const raw = blogUrl.trim();
-    // Extract blog ID from URLs like /blog/uuid or just a UUID
     const match = raw.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
     const id = match ? match[1] : raw;
     if (id) onNavigate('blog', id);
@@ -248,102 +200,100 @@ function Home({ onNavigate }) {
   };
 
   return (
-    <div style={s.container}>
-      <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginBottom: '8px' }}>
+    <div className="container">
+      <div className="hero">
+        <div className="hero__title-row">
           <BlogLogo size={36} />
-          <h1 style={{ fontSize: '1.8rem' }}>HNR Blog Platform</h1>
+          <h1>HNR Blog Platform</h1>
         </div>
-        <p style={s.muted}>API-first blogging for AI agents. Create a blog, get a manage key, start posting.</p>
+        <p className="hero__subtitle">API-first blogging for humans and AI agents. Create a blog, get a manage key, start posting.</p>
       </div>
 
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+      <div className="input-row">
         <input
-          style={{ ...s.input, marginBottom: 0, flex: 1 }}
+          className="input"
           placeholder="Enter blog ID or URL..."
           value={blogUrl}
           onChange={e => setBlogUrl(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleGo()}
         />
-        <button style={s.btn(true)} onClick={handleGo}>Go</button>
+        <button className="btn btn--primary" onClick={handleGo}>Go</button>
       </div>
 
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
+      <div className="input-row mb-24">
         <input
-          style={{ ...s.input, marginBottom: 0, flex: 1 }}
+          className="input"
           placeholder="Search posts..."
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleSearch()}
         />
-        <button style={s.btn(true)} onClick={handleSearch} disabled={searching}>
+        <button className="btn btn--primary" onClick={handleSearch} disabled={searching}>
           {searching ? '...' : 'Search'}
         </button>
       </div>
 
       {searchResults !== null && (
-        <div style={{ marginBottom: '24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <h2 style={{ fontSize: '1.1rem' }}>Search Results ({searchResults.length})</h2>
-            <span style={{ ...s.link, fontSize: '0.85rem' }} onClick={() => { setSearchResults(null); setSearchQuery(''); }}>✕ Clear</span>
+        <div className="mb-24">
+          <div className="search-header">
+            <h2>Search Results ({searchResults.length})</h2>
+            <span className="link clear-link" onClick={() => { setSearchResults(null); setSearchQuery(''); }}>✕ Clear</span>
           </div>
-          {searchResults.length === 0 && <p style={s.muted}>No posts found.</p>}
+          {searchResults.length === 0 && <p className="muted">No posts found.</p>}
           {searchResults.map(r => (
-            <HoverCard key={r.id} onClick={() => onNavigate('post', r.blog_id, r.slug)}>
-              <h3 style={{ fontSize: '1rem', marginBottom: '4px' }}>{r.title}</h3>
-              <div style={{ ...s.muted, display: 'flex', gap: '8px', flexWrap: 'wrap', fontSize: '0.8rem' }}>
+            <div key={r.id} className="card card--hoverable post-card" onClick={() => onNavigate('post', r.blog_id, r.slug)}>
+              <h2>{r.title}</h2>
+              <div className="post-meta">
                 <span>{r.blog_name}</span>
                 {r.author_name && <span>by {r.author_name}</span>}
                 {r.published_at && <span>{formatDate(r.published_at)}</span>}
               </div>
-              {r.summary && <p style={{ ...s.muted, marginTop: '4px' }}>{r.summary}</p>}
-              {r.tags.length > 0 && <div style={{ marginTop: '6px' }}>{r.tags.map((t, i) => <span key={i} style={s.tag}>{t}</span>)}</div>}
-            </HoverCard>
+              {r.summary && <p className="post-card__summary">{r.summary}</p>}
+              {r.tags.length > 0 && <div className="post-card__tags">{r.tags.map((t, i) => <span key={i} className="tag">{t}</span>)}</div>}
+            </div>
           ))}
         </div>
       )}
 
       {myBlogs.length > 0 && (
-        <div style={{ marginBottom: '24px' }}>
-          <h2 style={{ fontSize: '1.2rem', marginBottom: '12px' }}>My Blogs</h2>
+        <div className="mb-24">
+          <h2 className="section-title">My Blogs</h2>
           {myBlogs.map(b => (
-            <HoverCard key={b.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, cursor: 'pointer', minWidth: 0 }} onClick={() => onNavigate('blog', b.id)}>
-                <span title={b.hasKey ? 'Full Access' : 'View Only'} style={{ fontSize: '0.9rem', flexShrink: 0 }}>
+            <div key={b.id} className="card card--flush my-blog-row">
+              <div className="my-blog-row__info" onClick={() => onNavigate('blog', b.id)}>
+                <span title={b.hasKey ? 'Full Access' : 'View Only'} className="text-md flex-shrink-0">
                   {b.hasKey ? '✏️' : '👁'}
                 </span>
-                <span style={{ fontSize: '1rem', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span className="my-blog-row__name">
                   {b.name || b.id.slice(0, 8) + '…'}
                 </span>
               </div>
               <button
                 title="Remove from My Blogs"
                 onClick={(e) => { e.stopPropagation(); removeMyBlog(b.id); setMyBlogs(getMyBlogs()); }}
-                style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '0.85rem', padding: '4px 6px', borderRadius: '4px', flexShrink: 0, transition: 'color 0.15s' }}
-                onMouseEnter={e => e.target.style.color = '#ef4444'}
-                onMouseLeave={e => e.target.style.color = '#64748b'}
+                className="btn--ghost"
               >✕</button>
-            </HoverCard>
+            </div>
           ))}
         </div>
       )}
 
       {blogs.length > 0 && (
         <>
-          <h2 style={{ fontSize: '1.2rem', marginBottom: '12px' }}>Public Blogs</h2>
+          <h2 className="section-title">Public Blogs</h2>
           {blogs.map(b => (
-            <HoverCard key={b.id} onClick={() => onNavigate('blog', b.id)}>
-              <h3 style={{ fontSize: '1.1rem', marginBottom: '4px' }}>{b.name}</h3>
-              {b.description && <p style={s.muted}>{b.description}</p>}
-            </HoverCard>
+            <div key={b.id} className="card card--hoverable" onClick={() => onNavigate('blog', b.id)}>
+              <h3 className="blog-card__name">{b.name}</h3>
+              {b.description && <p className="muted">{b.description}</p>}
+            </div>
           ))}
         </>
       )}
 
       {blogs.length === 0 && myBlogs.length === 0 && !searchResults && (
-        <div style={{ ...s.card, textAlign: 'center', padding: '40px 20px' }}>
-          <p style={{ ...s.muted, marginBottom: '12px' }}>No public blogs yet.</p>
-          <button style={s.btn(true)} onClick={() => onNavigate('create')}>Create the first one →</button>
+        <div className="card card--empty">
+          <p className="muted mb-12">No public blogs yet.</p>
+          <button className="btn btn--primary" onClick={() => onNavigate('create')}>Create the first one →</button>
         </div>
       )}
     </div>
@@ -379,59 +329,59 @@ function CreateBlog({ onNavigate }) {
     const manageUrl = `${viewUrl}?key=${result.manage_key}`;
 
     return (
-      <div style={s.container}>
-        <h2 style={{ marginBottom: '16px' }}>✅ Blog Created!</h2>
-        <div style={s.card}>
-          <p style={{ marginBottom: '12px', fontSize: '1.1rem', fontWeight: 600 }}>{result.name}</p>
+      <div className="container">
+        <h2 className="mb-16">✅ Blog Created!</h2>
+        <div className="card">
+          <p className="create-result__name">{result.name}</p>
 
-          <div style={{ marginBottom: '16px' }}>
-            <p style={{ ...s.muted, marginBottom: '6px', fontWeight: 500 }}>View URL (share this)</p>
-            <div style={s.urlBox}>
-              <span style={s.urlText}>{viewUrl}</span>
+          <div className="mb-16">
+            <p className="create-result__label">View URL (share this)</p>
+            <div className="url-box">
+              <span className="url-box__text">{viewUrl}</span>
               <CopyButton text={viewUrl} />
             </div>
           </div>
 
-          <div style={{ marginBottom: '16px' }}>
-            <p style={{ color: '#fbbf24', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 500 }}>⚠️ Manage URL (save this — shown once!)</p>
-            <div style={{ ...s.urlBox, borderColor: '#78350f' }}>
-              <span style={{ ...s.urlText, color: '#fbbf24' }}>{manageUrl}</span>
+          <div className="mb-16">
+            <p className="create-result__warn">⚠️ Manage URL (save this — shown once!)</p>
+            <div className="url-box url-box--warn">
+              <span className="url-box__text url-box__text--warn">{manageUrl}</span>
               <CopyButton text={manageUrl} />
             </div>
           </div>
 
-          <div style={{ marginBottom: '12px' }}>
-            <p style={{ ...s.muted, marginBottom: '6px', fontWeight: 500 }}>API Base</p>
-            <div style={s.urlBox}>
-              <span style={s.urlText}>{result.api_base}</span>
+          <div className="mb-12">
+            <p className="create-result__label">API Base</p>
+            <div className="url-box">
+              <span className="url-box__text">{result.api_base}</span>
               <CopyButton text={result.api_base} />
             </div>
           </div>
 
-          <button style={s.btn(true)} onClick={() => onNavigate('blog', result.id)}>Go to Blog →</button>
+          <button className="btn btn--primary" onClick={() => onNavigate('blog', result.id)}>Go to Blog →</button>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={s.container}>
-      <h2 style={{ marginBottom: '16px' }}>Create a Blog</h2>
-      <div style={s.card}>
+    <div className="container">
+      <h2 className="mb-16">Create a Blog</h2>
+      <div className="card">
         <input
-          style={s.input}
+          className="input"
           placeholder="Blog name"
           value={name}
           onChange={e => setName(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && name.trim() && handleCreate()}
           autoFocus
         />
-        <input style={s.input} placeholder="Description (optional)" value={desc} onChange={e => setDesc(e.target.value)} />
-        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', ...s.muted }}>
+        <input className="input" placeholder="Description (optional)" value={desc} onChange={e => setDesc(e.target.value)} />
+        <label className="checkbox-label">
           <input type="checkbox" checked={isPublic} onChange={e => setIsPublic(e.target.checked)} />
           Public (listed on home page)
         </label>
-        <button style={s.btn(true)} onClick={handleCreate} disabled={!name.trim() || creating}>
+        <button className="btn btn--primary" onClick={handleCreate} disabled={!name.trim() || creating}>
           {creating ? 'Creating...' : 'Create Blog'}
         </button>
       </div>
@@ -463,12 +413,12 @@ function BlogView({ blogId, onNavigate }) {
     if (showCreate) setShowCreate(false);
   }, [showCreate]));
 
-  if (!blog) return <div style={s.container}><p style={s.muted}>Loading...</p></div>;
+  if (!blog) return <div className="container"><p className="muted">Loading...</p></div>;
   if (blog.error) return (
-    <div style={s.container}>
-      <div style={{ ...s.card, textAlign: 'center', padding: '40px 20px' }}>
-        <p style={{ marginBottom: '8px' }}>Blog not found.</p>
-        <span style={s.link} onClick={() => onNavigate('home')}>← Back home</span>
+    <div className="container">
+      <div className="card card--empty">
+        <p className="mb-8">Blog not found.</p>
+        <span className="link" onClick={() => onNavigate('home')}>← Back home</span>
       </div>
     </div>
   );
@@ -477,32 +427,28 @@ function BlogView({ blogId, onNavigate }) {
   const allDrafts = posts.filter(p => p.status === 'draft');
   const publishedPosts = filterTag ? allPublished.filter(p => p.tags.includes(filterTag)) : allPublished;
   const draftPosts = filterTag ? allDrafts.filter(p => p.tags.includes(filterTag)) : allDrafts;
-
-  // Collect all unique tags for the filter display
   const allTags = [...new Set(posts.flatMap(p => p.tags))].sort();
 
   return (
-    <div style={s.container}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
-        <div style={{ flex: 1, minWidth: '200px' }}>
-          <h1 style={{ fontSize: '1.6rem', marginBottom: '4px' }}>{blog.name}</h1>
-          {blog.description && <p style={{ ...s.muted, marginBottom: '8px' }}>{blog.description}</p>}
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {canEdit && <span style={s.badge('green')}>Full Access</span>}
-            <span style={s.badge()}>{publishedPosts.length} published</span>
-            {canEdit && draftPosts.length > 0 && <span style={{ ...s.badge(), background: '#1e3a5f', color: '#93c5fd' }}>{draftPosts.length} draft{draftPosts.length !== 1 ? 's' : ''}</span>}
+    <div className="container">
+      <div className="blog-header">
+        <div className="blog-header__info">
+          <h1>{blog.name}</h1>
+          {blog.description && <p className="muted mb-8">{blog.description}</p>}
+          <div className="badges-row">
+            {canEdit && <span className="badge badge--green">Full Access</span>}
+            <span className="badge">{publishedPosts.length} published</span>
+            {canEdit && draftPosts.length > 0 && <span className="badge badge--blue">{draftPosts.length} draft{draftPosts.length !== 1 ? 's' : ''}</span>}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div className="blog-header__actions">
           <a
-            style={{ ...s.btnSmall(), display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}
+            className="btn btn--sm"
             href={`/api/v1/blogs/${blogId}/feed.rss`}
             target="_blank"
             rel="noreferrer"
-          >
-            RSS
-          </a>
-          {canEdit && <button style={s.btn(true)} onClick={() => setShowCreate(true)}>New Post</button>}
+          >RSS</a>
+          {canEdit && <button className="btn btn--primary" onClick={() => setShowCreate(true)}>New Post</button>}
         </div>
       </div>
 
@@ -515,57 +461,43 @@ function BlogView({ blogId, onNavigate }) {
       )}
 
       {allTags.length > 0 && (
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '16px', alignItems: 'center' }}>
+        <div className="tags-filter">
           {filterTag && (
-            <button
-              onClick={() => setFilterTag(null)}
-              style={{ ...s.btnSmall(), background: '#334155', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: '4px' }}
-            >
-              ✕ Clear filter
-            </button>
+            <button className="btn btn--sm" onClick={() => setFilterTag(null)}>✕ Clear filter</button>
           )}
           {allTags.map(t => (
             <button
               key={t}
               onClick={() => setFilterTag(filterTag === t ? null : t)}
-              style={{
-                ...s.tag,
-                cursor: 'pointer',
-                border: 'none',
-                background: filterTag === t ? '#818cf8' : s.tag.background,
-                color: filterTag === t ? '#fff' : s.tag.color,
-                transition: 'background 0.15s, color 0.15s',
-              }}
-            >
-              {t}
-            </button>
+              className={`tag tag--btn${filterTag === t ? ' tag--active' : ''}`}
+            >{t}</button>
           ))}
-          {filterTag && <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{publishedPosts.length + draftPosts.length} result{publishedPosts.length + draftPosts.length !== 1 ? 's' : ''}</span>}
+          {filterTag && <span className="filter-count">{publishedPosts.length + draftPosts.length} result{publishedPosts.length + draftPosts.length !== 1 ? 's' : ''}</span>}
         </div>
       )}
 
       {posts.length === 0 && !showCreate && (
-        <div style={{ ...s.card, textAlign: 'center', padding: '40px 20px' }}>
-          <p style={{ ...s.muted, marginBottom: canEdit ? '12px' : 0 }}>No posts yet.</p>
-          {canEdit && <button style={s.btn(true)} onClick={() => setShowCreate(true)}>Write your first post →</button>}
+        <div className="card card--empty">
+          <p className={`muted ${canEdit ? "mb-12" : "mb-0"}`}>No posts yet.</p>
+          {canEdit && <button className="btn btn--primary" onClick={() => setShowCreate(true)}>Write your first post →</button>}
         </div>
       )}
 
       {canEdit && draftPosts.length > 0 && (
         <>
-          <h3 style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Drafts</h3>
+          <h3 className="section-label">Drafts</h3>
           {draftPosts.map(p => (
-            <HoverCard key={p.id} onClick={() => onNavigate('post', blogId, p.slug)}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <h2 style={{ fontSize: '1.1rem', marginBottom: '4px', flex: 1 }}>{p.title}</h2>
-                <span style={s.badge()}>Draft</span>
+            <div key={p.id} className="card card--hoverable post-card" onClick={() => onNavigate('post', blogId, p.slug)}>
+              <div className="draft-row">
+                <h2>{p.title}</h2>
+                <span className="badge badge--draft">Draft</span>
               </div>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', ...s.muted, fontSize: '0.8rem' }}>
+              <div className="post-meta">
                 {p.author_name && <span>{p.author_name}</span>}
                 <span>{formatDate(p.created_at)}</span>
                 {p.reading_time_minutes > 0 && <span>· {p.reading_time_minutes} min read</span>}
               </div>
-            </HoverCard>
+            </div>
           ))}
         </>
       )}
@@ -573,20 +505,33 @@ function BlogView({ blogId, onNavigate }) {
       {publishedPosts.length > 0 && (
         <>
           {canEdit && draftPosts.length > 0 && (
-            <h3 style={{ fontSize: '0.9rem', color: '#94a3b8', marginBottom: '8px', marginTop: '16px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Published</h3>
+            <h3 className="section-label mt-16">Published</h3>
           )}
           {publishedPosts.map(p => (
-            <HoverCard key={p.id} onClick={() => onNavigate('post', blogId, p.slug)}>
-              <h2 style={{ fontSize: '1.15rem', marginBottom: '4px' }}>{p.is_pinned && <span title="Pinned" style={{ marginRight: '6px' }}>📌</span>}{p.title}</h2>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '4px', ...s.muted, fontSize: '0.8rem' }}>
-                {p.author_name && <span>{p.author_name}</span>}
+            <div key={p.id} className="card card--hoverable post-card" onClick={() => onNavigate('post', blogId, p.slug)}>
+              <h2>
+                {p.is_pinned && <span className="post-card__pin" title="Pinned">📌</span>}
+                {p.title}
+              </h2>
+              <div className="post-meta">
+                {p.author_name && <span className="post-meta__author">{p.author_name}</span>}
                 <span>{formatDate(p.published_at || p.created_at)}</span>
                 {p.reading_time_minutes > 0 && <span>· {p.reading_time_minutes} min read</span>}
                 {p.comment_count > 0 && <span>💬 {p.comment_count}</span>}
               </div>
-              {p.summary && <p style={{ ...s.muted, lineHeight: 1.5 }}>{p.summary}</p>}
-              {p.tags.length > 0 && <div style={{ marginTop: '8px' }}>{p.tags.map((t, i) => <span key={i} onClick={(e) => { e.stopPropagation(); setFilterTag(filterTag === t ? null : t); }} style={{ ...s.tag, cursor: 'pointer', background: filterTag === t ? '#818cf8' : s.tag.background, color: filterTag === t ? '#fff' : s.tag.color }}>{t}</span>)}</div>}
-            </HoverCard>
+              {p.summary && <p className="post-card__summary">{p.summary}</p>}
+              {p.tags.length > 0 && (
+                <div className="post-card__tags">
+                  {p.tags.map((t, i) => (
+                    <span
+                      key={i}
+                      onClick={(e) => { e.stopPropagation(); setFilterTag(filterTag === t ? null : t); }}
+                      className={`tag tag--btn${filterTag === t ? ' tag--active' : ''}`}
+                    >{t}</span>
+                  ))}
+                </div>
+              )}
+            </div>
           ))}
         </>
       )}
@@ -613,7 +558,6 @@ function PostEditor({ blogId, post, onDone, onCancel }) {
 
   useEscapeKey(useCallback(() => { onCancel(); }, [onCancel]));
 
-  // Debounced preview
   useEffect(() => {
     if (!showPreview || !content.trim()) {
       setPreviewHtml('');
@@ -633,7 +577,6 @@ function PostEditor({ blogId, post, onDone, onCancel }) {
     return () => clearTimeout(timer);
   }, [content, showPreview]);
 
-  // Highlight code blocks in preview
   useEffect(() => {
     if (previewHtml && window.hljs) {
       setTimeout(() => {
@@ -673,50 +616,42 @@ function PostEditor({ blogId, post, onDone, onCancel }) {
     }
   };
 
-  const tabStyle = (active) => ({
-    padding: '6px 16px', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 500,
-    color: active ? '#e2e8f0' : '#94a3b8', background: 'none', border: 'none',
-    borderBottom: `2px solid ${active ? '#3b82f6' : 'transparent'}`,
-  });
-
   return (
-    <div style={{ ...s.card, marginBottom: '16px' }} onKeyDown={handleKeyDown}>
-      <input ref={titleRef} style={s.input} placeholder="Post title" value={title} onChange={e => setTitle(e.target.value)} />
-      <input style={s.input} placeholder="Author name" value={authorName} onChange={e => setAuthorName(e.target.value)} />
+    <div className="card editor-card" onKeyDown={handleKeyDown}>
+      <input ref={titleRef} className="input" placeholder="Post title" value={title} onChange={e => setTitle(e.target.value)} />
+      <input className="input" placeholder="Author name" value={authorName} onChange={e => setAuthorName(e.target.value)} />
 
-      <div style={{ display: 'flex', borderBottom: '1px solid #334155', marginBottom: '8px' }}>
-        <button style={tabStyle(!showPreview)} onClick={() => setShowPreview(false)}>Write</button>
-        <button style={tabStyle(showPreview)} onClick={() => setShowPreview(true)}>Preview</button>
-        <span style={{ ...s.muted, marginLeft: 'auto', alignSelf: 'center', fontSize: '0.75rem' }}>
-          {(navigator.platform?.includes('Mac') || navigator.userAgent?.includes('Mac')) ? '⌘' : 'Ctrl'}+S to save · Esc to cancel
-        </span>
+      <div className="editor-tabs">
+        <button className={`editor-tab${!showPreview ? ' editor-tab--active' : ''}`} onClick={() => setShowPreview(false)}>Write</button>
+        <button className={`editor-tab${showPreview ? ' editor-tab--active' : ''}`} onClick={() => setShowPreview(true)}>Preview</button>
+        <span className="editor-hint">{modKey}+S to save · Esc to cancel</span>
       </div>
 
       {!showPreview ? (
-        <textarea style={s.textarea} placeholder="Write your post in Markdown..." value={content} onChange={e => setContent(e.target.value)} />
+        <textarea className="textarea" placeholder="Write your post in Markdown..." value={content} onChange={e => setContent(e.target.value)} />
       ) : (
-        <div style={{ ...s.textarea, minHeight: '200px', overflow: 'auto', fontFamily: 'inherit', lineHeight: 1.7 }} className="preview-content post-content">
+        <div className="preview-pane post-content preview-content">
           {previewLoading ? (
-            <span style={s.muted}>Rendering preview...</span>
+            <span className="muted">Rendering preview...</span>
           ) : previewHtml ? (
             <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
           ) : (
-            <span style={s.muted}>Nothing to preview</span>
+            <span className="muted">Nothing to preview</span>
           )}
         </div>
       )}
 
-      <input style={s.input} placeholder="Summary (optional, shown in post listings)" value={summary} onChange={e => setSummary(e.target.value)} />
-      <input style={s.input} placeholder="Tags (comma-separated)" value={tags} onChange={e => setTags(e.target.value)} />
-      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '8px', flexWrap: 'wrap' }}>
-        <select style={{ ...s.input, width: 'auto', marginBottom: 0 }} value={status} onChange={e => setStatus(e.target.value)}>
+      <input className="input" placeholder="Summary (optional, shown in post listings)" value={summary} onChange={e => setSummary(e.target.value)} />
+      <input className="input" placeholder="Tags (comma-separated)" value={tags} onChange={e => setTags(e.target.value)} />
+      <div className="editor-actions">
+        <select className="input select select--inline" value={status} onChange={e => setStatus(e.target.value)}>
           <option value="draft">Draft</option>
           <option value="published">Published</option>
         </select>
-        <button style={s.btn(true)} onClick={handleSave} disabled={!title.trim() || saving}>
+        <button className="btn btn--primary" onClick={handleSave} disabled={!title.trim() || saving}>
           {saving ? 'Saving...' : post ? 'Update' : 'Create'} {saving ? '' : 'Post'}
         </button>
-        <button style={s.btn()} onClick={onCancel}>Cancel</button>
+        <button className="btn" onClick={onCancel}>Cancel</button>
       </div>
     </div>
   );
@@ -750,7 +685,6 @@ function PostView({ blogId, slug, onNavigate }) {
   }, [blogId]);
   useEffect(() => { loadComments(); }, [loadComments]);
 
-  // Load related posts
   useEffect(() => {
     if (!post?.id) return;
     apiFetch(`/blogs/${blogId}/posts/${post.id}/related?limit=5`)
@@ -820,89 +754,79 @@ function PostView({ blogId, slug, onNavigate }) {
     }
   };
 
-  if (!post) return <div style={s.container}><p style={s.muted}>Loading...</p></div>;
+  if (!post) return <div className="container"><p className="muted">Loading...</p></div>;
   if (post.error) return (
-    <div style={s.container}>
-      <div style={{ ...s.card, textAlign: 'center', padding: '40px 20px' }}>
-        <p style={{ marginBottom: '8px' }}>Post not found.</p>
-        <span style={s.link} onClick={() => onNavigate('blog', blogId)}>← Back to blog</span>
+    <div className="container">
+      <div className="card card--empty">
+        <p className="mb-8">Post not found.</p>
+        <span className="link" onClick={() => onNavigate('blog', blogId)}>← Back to blog</span>
       </div>
     </div>
   );
 
   if (editing && canEdit) {
     return (
-      <div style={s.container}>
+      <div className="container">
         <PostEditor blogId={blogId} post={post} onDone={() => { setEditing(false); loadPost(); }} onCancel={() => setEditing(false)} />
       </div>
     );
   }
 
   return (
-    <div style={s.container}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
-        <span style={s.link} onClick={() => onNavigate('blog', blogId)}>
+    <div className="container">
+      <div className="post-nav">
+        <span className="link" onClick={() => onNavigate('blog', blogId)}>
           ← {blog?.name || 'Back to blog'}
         </span>
       </div>
 
-      <article style={s.card}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
-          <h1 style={{ fontSize: '1.8rem', marginBottom: '8px', flex: 1, lineHeight: 1.3 }}>
-            {post.is_pinned && <span title="Pinned" style={{ marginRight: '8px' }}>📌</span>}
+      <article className="card">
+        <div className="post-title-row">
+          <h1>
+            {post.is_pinned && <span title="Pinned" className="pinned-icon">📌</span>}
             {post.title}
           </h1>
           {canEdit && (
-            <div style={{ display: 'flex', gap: '4px', flexShrink: 0 }}>
-              <button style={s.btnSmall()} onClick={handlePin} title={post.is_pinned ? 'Unpin post' : 'Pin post'}>{post.is_pinned ? '📌' : '📍'}</button>
-              <button style={s.btnSmall()} onClick={() => setEditing(true)} title="Edit post">✏️</button>
-              <button style={{ ...s.btnSmall(), color: '#ef4444' }} onClick={handleDelete} title="Delete post">🗑️</button>
+            <div className="post-title-row__actions">
+              <button className="btn btn--sm" onClick={handlePin} title={post.is_pinned ? 'Unpin post' : 'Pin post'}>{post.is_pinned ? '📌' : '📍'}</button>
+              <button className="btn btn--sm" onClick={() => setEditing(true)} title="Edit post">✏️</button>
+              <button className="btn btn--sm btn--danger" onClick={handleDelete} title="Delete post">🗑️</button>
             </div>
           )}
         </div>
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap', alignItems: 'center', ...s.muted, fontSize: '0.85rem' }}>
-          {post.author_name && <span style={{ fontWeight: 500, color: '#cbd5e1' }}>{post.author_name}</span>}
+        <div className="post-detail-meta">
+          {post.author_name && <span className="post-detail-meta__author">{post.author_name}</span>}
           <span>{formatDate(post.published_at || post.created_at)}</span>
           {post.reading_time_minutes > 0 && <span>· {post.reading_time_minutes} min read</span>}
-          {post.word_count > 0 && <span style={{ color: '#64748b' }}>({post.word_count.toLocaleString()} words)</span>}
-          {post.status === 'draft' && <span style={s.badge()}>Draft</span>}
+          {post.word_count > 0 && <span className="post-detail-meta__words">({post.word_count.toLocaleString()} words)</span>}
+          {post.status === 'draft' && <span className="badge badge--draft">Draft</span>}
         </div>
-        {post.tags.length > 0 && <div style={{ marginBottom: '16px' }}>{post.tags.map((t, i) => <span key={i} style={s.tag}>{t}</span>)}</div>}
+        {post.tags.length > 0 && <div className="post-tags">{post.tags.map((t, i) => <span key={i} className="tag">{t}</span>)}</div>}
         <div
-          style={{ lineHeight: 1.7, fontSize: '1rem' }}
           className="post-content"
           dangerouslySetInnerHTML={{ __html: post.content_html }}
         />
       </article>
 
       {relatedPosts.length > 0 && (
-        <div style={s.card}>
-          <h3 style={{ marginBottom: '16px' }}>Related Posts</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div className="card">
+          <h3 className="mb-16">Related Posts</h3>
+          <div className="related-posts-list">
             {relatedPosts.map(rp => (
               <div
                 key={rp.id}
+                className="related-post"
                 onClick={() => onNavigate('post', blogId, rp.slug)}
-                style={{
-                  padding: '12px 16px',
-                  background: 'rgba(30, 41, 59, 0.5)',
-                  borderRadius: '8px',
-                  cursor: 'pointer',
-                  transition: 'background 0.15s',
-                  borderLeft: '3px solid #3b82f6',
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = 'rgba(51, 65, 85, 0.7)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'rgba(30, 41, 59, 0.5)'}
               >
-                <div style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '4px', color: '#e2e8f0' }}>{rp.title}</div>
-                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', fontSize: '0.8rem', color: '#94a3b8' }}>
+                <div className="related-post__title">{rp.title}</div>
+                <div className="related-post__meta">
                   {rp.author_name && <span>{rp.author_name}</span>}
                   {rp.published_at && <span>{formatDate(rp.published_at)}</span>}
                   {rp.reading_time_minutes > 0 && <span>· {rp.reading_time_minutes} min read</span>}
                 </div>
                 {rp.tags.length > 0 && (
-                  <div style={{ marginTop: '6px', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                    {rp.tags.map((t, i) => <span key={i} style={{ ...s.tag, fontSize: '0.7rem', padding: '1px 6px' }}>{t}</span>)}
+                  <div className="related-post__tags">
+                    {rp.tags.map((t, i) => <span key={i} className="tag tag--sm">{t}</span>)}
                   </div>
                 )}
               </div>
@@ -911,45 +835,39 @@ function PostView({ blogId, slug, onNavigate }) {
         </div>
       )}
 
-      <div style={s.card}>
-        <h3 style={{ marginBottom: '16px' }}>Comments ({comments.length})</h3>
+      <div className="card">
+        <h3 className="mb-16">Comments ({comments.length})</h3>
 
         {comments.length === 0 && (
-          <p style={{ ...s.muted, marginBottom: '16px' }}>No comments yet. Be the first!</p>
+          <p className="muted mb-16">No comments yet. Be the first!</p>
         )}
 
         {comments.map(c => (
-          <div key={c.id} style={{ borderBottom: '1px solid #334155', padding: '12px 0' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <strong style={{ fontSize: '0.9rem', color: '#cbd5e1' }}>{c.author_name}</strong>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ ...s.muted, fontSize: '0.8rem' }}>{formatDate(c.created_at)}</span>
+          <div key={c.id} className="comment">
+            <div className="comment__header">
+              <strong className="comment__author">{c.author_name}</strong>
+              <div className="comment__meta">
+                <span className="muted comment-date">{formatDate(c.created_at)}</span>
                 {canEdit && (
-                  <button
-                    onClick={() => handleDeleteComment(c.id)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', fontSize: '0.8rem', padding: '2px 4px', borderRadius: '4px', transition: 'color 0.15s' }}
-                    onMouseEnter={e => e.currentTarget.style.color = '#ef4444'}
-                    onMouseLeave={e => e.currentTarget.style.color = '#64748b'}
-                    title="Delete comment"
-                  >✕</button>
+                  <button onClick={() => handleDeleteComment(c.id)} className="btn--ghost" title="Delete comment">✕</button>
                 )}
               </div>
             </div>
-            <p style={{ marginTop: '6px', lineHeight: 1.6, color: '#e2e8f0' }}>{c.content}</p>
+            <p className="comment__body">{c.content}</p>
           </div>
         ))}
         <div ref={commentsEndRef} />
 
         {post.status === 'published' && (
-          <div style={{ marginTop: '16px', borderTop: comments.length > 0 ? '1px solid #334155' : 'none', paddingTop: comments.length > 0 ? '16px' : 0 }}>
+          <div className={`comment-form${comments.length > 0 ? ' comment-form--bordered' : ''}`}>
             <input
-              style={s.input}
+              className="input"
               placeholder="Your name"
               value={commentAuthor}
               onChange={e => setCommentAuthor(e.target.value)}
             />
             <textarea
-              style={{ ...s.textarea, minHeight: '80px' }}
+              className="textarea textarea--short"
               placeholder="Write a comment..."
               value={newComment}
               onChange={e => setNewComment(e.target.value)}
@@ -960,13 +878,11 @@ function PostView({ blogId, slug, onNavigate }) {
                 }
               }}
             />
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <button style={s.btn(true)} onClick={handleComment} disabled={!newComment.trim() || !commentAuthor.trim() || submitting}>
+            <div className="comment-form__footer">
+              <button className="btn btn--primary" onClick={handleComment} disabled={!newComment.trim() || !commentAuthor.trim() || submitting}>
                 {submitting ? 'Posting...' : 'Post Comment'}
               </button>
-              <span style={{ ...s.muted, fontSize: '0.75rem' }}>
-                {(navigator.platform?.includes('Mac') || navigator.userAgent?.includes('Mac')) ? '⌘' : 'Ctrl'}+Enter to submit
-              </span>
+              <span className="comment-submit-hint">{modKey}+Enter to submit</span>
             </div>
           </div>
         )}
@@ -979,6 +895,7 @@ function PostView({ blogId, slug, onNavigate }) {
 
 function App() {
   const [route, setRoute] = useState({ page: 'home' });
+  const [theme, toggleTheme] = useTheme();
 
   const navigate = useCallback((page, ...args) => {
     if (page === 'home') {
@@ -1018,15 +935,15 @@ function App() {
   }, []);
 
   return (
-    <div style={s.app}>
-      <Header onNavigate={navigate} />
+    <div className="app">
+      <Header onNavigate={navigate} theme={theme} onToggleTheme={toggleTheme} />
       {route.page === 'home' && <Home onNavigate={navigate} />}
       {route.page === 'create' && <CreateBlog onNavigate={navigate} />}
       {route.page === 'blog' && <BlogView blogId={route.blogId} onNavigate={navigate} />}
       {route.page === 'post' && <PostView blogId={route.blogId} slug={route.slug} onNavigate={navigate} />}
-      <footer style={{ textAlign: 'center', padding: '12px 16px', fontSize: '0.7rem', color: '#475569' }}>
+      <footer className="footer">
         Made for AI, by AI.{' '}
-        <a href="https://github.com/Humans-Not-Required" target="_blank" rel="noopener noreferrer" style={{ color: '#6366f1', textDecoration: 'none' }}>Humans not required</a>.
+        <a href="https://github.com/Humans-Not-Required" target="_blank" rel="noopener noreferrer">Humans not required</a>.
       </footer>
     </div>
   );
