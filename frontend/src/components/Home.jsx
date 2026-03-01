@@ -8,6 +8,7 @@ export default function Home({ onNavigate }) {
   const [blogUrl, setBlogUrl] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState(null);
+  const [searchMode, setSearchMode] = useState('keyword');
   const [myBlogs, setMyBlogs] = useState(() => refreshMyBlogKeys());
   const [searching, setSearching] = useState(false);
 
@@ -26,7 +27,10 @@ export default function Home({ onNavigate }) {
     const q = searchQuery.trim();
     if (!q) return;
     setSearching(true);
-    apiFetch(`/search?q=${encodeURIComponent(q)}`)
+    const endpoint = searchMode === 'semantic'
+      ? `/search/semantic?q=${encodeURIComponent(q)}&limit=10`
+      : `/search?q=${encodeURIComponent(q)}`;
+    apiFetch(endpoint)
       .then(r => { setSearchResults(r); setSearching(false); })
       .catch(() => { setSearchResults([]); setSearching(false); });
   };
@@ -52,10 +56,10 @@ export default function Home({ onNavigate }) {
         <button className="btn btn--primary" onClick={handleGo}>Go</button>
       </div>
 
-      <div className="input-row mb-24">
+      <div className="input-row mb-8">
         <input
           className="input"
-          placeholder="Search posts..."
+          placeholder={searchMode === 'semantic' ? 'Search by meaning...' : 'Search posts...'}
           value={searchQuery}
           onChange={e => setSearchQuery(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleSearch()}
@@ -63,6 +67,19 @@ export default function Home({ onNavigate }) {
         <button className="btn btn--primary" onClick={handleSearch} disabled={searching}>
           {searching ? '...' : 'Search'}
         </button>
+      </div>
+      <div className="search-mode-toggle mb-24">
+        <button
+          className={`search-mode-btn${searchMode === 'keyword' ? ' search-mode-btn--active' : ''}`}
+          onClick={() => setSearchMode('keyword')}
+        >Keyword</button>
+        <button
+          className={`search-mode-btn${searchMode === 'semantic' ? ' search-mode-btn--active' : ''}`}
+          onClick={() => setSearchMode('semantic')}
+        >Semantic</button>
+        <span className="search-mode-hint">
+          {searchMode === 'semantic' ? 'Finds posts by meaning, not exact words' : 'Exact word matching with highlights'}
+        </span>
       </div>
 
       {searchResults !== null && (
@@ -81,7 +98,7 @@ export default function Home({ onNavigate }) {
                 {r.published_at && <span>{formatDate(r.published_at)}</span>}
               </div>
               {r.snippet ? <p className="post-card__summary search-snippet" dangerouslySetInnerHTML={{ __html: r.snippet }} /> : r.summary && <p className="post-card__summary">{r.summary}</p>}
-              {r.tags.length > 0 && <div className="post-card__tags">{r.tags.map((t, i) => <span key={i} className="tag">{t}</span>)}</div>}
+              {r.tags && r.tags.length > 0 && <div className="post-card__tags">{r.tags.map((t, i) => <span key={i} className="tag">{t}</span>)}</div>}
             </div>
           ))}
         </div>
