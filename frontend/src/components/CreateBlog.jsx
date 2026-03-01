@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { apiFetch, addMyBlog } from '../utils';
-import { useEscapeKey } from '../hooks';
+import { useEscapeKey, useDocTitle } from '../hooks';
 import CopyButton from './CopyButton';
 
 export default function CreateBlog({ onNavigate }) {
@@ -9,6 +9,8 @@ export default function CreateBlog({ onNavigate }) {
   const [isPublic, setIsPublic] = useState(false);
   const [result, setResult] = useState(null);
   const [creating, setCreating] = useState(false);
+
+  useDocTitle("Create Blog");
 
   useEscapeKey(useCallback(() => { if (!result) onNavigate('home'); }, [result, onNavigate]));
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { apiFetch, formatDate, addMyBlog } from '../utils';
-import { useEscapeKey } from '../hooks';
+import { useEscapeKey, useDocTitle } from '../hooks';
 import PostEditor from './PostEditor';
 
 export default function BlogView({ blogId, onNavigate }) {
@@ -10,6 +10,8 @@ export default function BlogView({ blogId, onNavigate }) {
   const [filterTag, setFilterTag] = useState(null);
   const manageKey = localStorage.getItem(`blog_key_${blogId}`);
   const canEdit = !!manageKey;
+
+  useDocTitle(blog?.name || null);
 
   const refreshPosts = useCallback(() => {
     apiFetch(`/blogs/${blogId}/posts`).then(setPosts).catch(console.error);
@@ -132,6 +134,7 @@ export default function BlogView({ blogId, onNavigate }) {
                 <span>{formatDate(p.published_at || p.created_at)}</span>
                 {p.reading_time_minutes > 0 && <span>· {p.reading_time_minutes} min read</span>}
                 {p.comment_count > 0 && <span>💬 {p.comment_count}</span>}
+                {p.view_count > 0 && <span>👁 {p.view_count}</span>}
               </div>
               {p.summary && <p className="post-card__summary">{p.summary}</p>}
               {p.tags.length > 0 && (

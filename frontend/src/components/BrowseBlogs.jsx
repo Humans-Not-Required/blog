@@ -3,7 +3,7 @@ import { apiFetch, formatDate, refreshMyBlogKeys, getMyBlogs, removeMyBlog } fro
 import { useDocTitle } from '../hooks';
 import BlogLogo from './BlogLogo';
 
-export default function Home({ onNavigate }) {
+export default function BrowseBlogs({ onNavigate }) {
   const [blogs, setBlogs] = useState([]);
   const [blogUrl, setBlogUrl] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -11,7 +11,7 @@ export default function Home({ onNavigate }) {
   const [myBlogs, setMyBlogs] = useState(() => refreshMyBlogKeys());
   const [searching, setSearching] = useState(false);
 
-  useDocTitle(null);
+  useDocTitle(null); // default title on home page
 
   useEffect(() => { apiFetch('/blogs').then(setBlogs).catch(console.error); }, []);
 

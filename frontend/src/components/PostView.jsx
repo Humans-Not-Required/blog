@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { apiFetch, formatDate, getSavedAuthor, saveAuthor, modKey } from '../utils';
-import { useEscapeKey } from '../hooks';
+import { useEscapeKey, useDocTitle } from '../hooks';
 import PostEditor from './PostEditor';
 
 export default function PostView({ blogId, slug, onNavigate }) {
@@ -15,6 +15,8 @@ export default function PostView({ blogId, slug, onNavigate }) {
   const manageKey = localStorage.getItem(`blog_key_${blogId}`);
   const canEdit = !!manageKey;
   const commentsEndRef = useRef(null);
+
+  useDocTitle(post?.title || null);
 
   const loadPost = useCallback(() => {
     apiFetch(`/blogs/${blogId}/posts/${slug}`).then(setPost).catch(() => setPost({ error: true }));
@@ -145,6 +147,7 @@ export default function PostView({ blogId, slug, onNavigate }) {
           <span>{formatDate(post.published_at || post.created_at)}</span>
           {post.reading_time_minutes > 0 && <span>· {post.reading_time_minutes} min read</span>}
           {post.word_count > 0 && <span className="post-detail-meta__words">({post.word_count.toLocaleString()} words)</span>}
+          {post.view_count > 0 && <span title="Views">👁 {post.view_count.toLocaleString()}</span>}
           {post.status === 'draft' && <span className="badge badge--draft">Draft</span>}
         </div>
         {post.tags.length > 0 && <div className="post-tags">{post.tags.map((t, i) => <span key={i} className="tag">{t}</span>)}</div>}

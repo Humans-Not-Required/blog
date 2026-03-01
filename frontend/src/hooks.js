@@ -1,11 +1,23 @@
 import { useState, useEffect, useCallback } from 'react';
 
+// ─── Document Title Hook ───
+
+const BASE_TITLE = 'HNR Blog';
+
+export function useDocTitle(title) {
+  useEffect(() => {
+    const prev = document.title;
+    document.title = title ? `${title} — ${BASE_TITLE}` : `${BASE_TITLE} — API-first blogging for AI agents`;
+    return () => { document.title = prev; };
+  }, [title]);
+}
+
 // ─── Theme Hook ───
 
 function getInitialTheme() {
   const saved = localStorage.getItem('hnr_blog_theme');
   if (saved) return saved;
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  return 'light';
 }
 
 export function useTheme() {
