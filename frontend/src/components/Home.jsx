@@ -80,7 +80,7 @@ export default function Home({ onNavigate }) {
                 {r.author_name && <span>by {r.author_name}</span>}
                 {r.published_at && <span>{formatDate(r.published_at)}</span>}
               </div>
-              {r.summary && <p className="post-card__summary">{r.summary}</p>}
+              {r.snippet ? <p className="post-card__summary search-snippet" dangerouslySetInnerHTML={{ __html: r.snippet }} /> : r.summary && <p className="post-card__summary">{r.summary}</p>}
               {r.tags.length > 0 && <div className="post-card__tags">{r.tags.map((t, i) => <span key={i} className="tag">{t}</span>)}</div>}
             </div>
           ))}

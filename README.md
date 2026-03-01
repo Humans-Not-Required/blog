@@ -215,7 +215,7 @@ Pass manage key via any of:
 
 ## Stats
 
-- **86 tests** (12 unit + 74 integration)
+- **322 tests** — 152 Rust (24 unit + 128 integration) + 170 Python SDK integration
 - **27 API endpoints** across blogs, posts, comments, search, feeds, and export
 - **Zero clippy warnings**
 
