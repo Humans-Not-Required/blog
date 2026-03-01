@@ -1117,3 +1117,72 @@ select.input {
   font-size: 0.75rem;
   color: var(--text-muted);
 }
+
+/* ─── Markdown Toolbar ─── */
+
+.md-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  border: 1px solid var(--border-input);
+  border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--bg-card);
+}
+
+.md-toolbar__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.md-toolbar__btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.md-toolbar__btn--bold { font-weight: 700; font-family: var(--font-sans); }
+.md-toolbar__btn--italic { font-style: italic; font-family: var(--font-sans); }
+
+.md-toolbar__sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.md-toolbar + .textarea {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* ─── Editor Word Count ─── */
+
+.editor-wordcount {
+  text-align: right;
+  margin-top: 2px;
+  margin-bottom: 4px;
+  font-size: 0.75rem;
+  min-height: 18px;
+}
+
+/* ─── Unsaved Indicator ─── */
+
+.editor-unsaved {
+  color: var(--warning, #e5a00d);
+  font-size: 0.8rem;
+  font-weight: 500;
+  margin-left: auto;
+}
