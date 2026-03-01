@@ -3,6 +3,65 @@ import { apiFetch, formatDate, getSavedAuthor, saveAuthor, modKey } from '../uti
 import { useEscapeKey, useDocTitle } from '../hooks';
 import PostEditor from './PostEditor';
 
+function slugify(text) {
+  return text.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-').replace(/-+/g, '-').trim();
+}
+
+function enhancePostContent(containerEl) {
+  if (!containerEl) return;
+
+  // Add copy buttons to code blocks
+  containerEl.querySelectorAll('pre > code').forEach(codeEl => {
+    const pre = codeEl.parentElement;
+    if (pre.querySelector('.code-copy-btn')) return;
+    const btn = document.createElement('button');
+    btn.className = 'code-copy-btn';
+    btn.textContent = 'Copy';
+    btn.setAttribute('aria-label', 'Copy code');
+    btn.addEventListener('click', () => {
+      navigator.clipboard.writeText(codeEl.textContent).then(() => {
+        btn.textContent = 'Copied!';
+        btn.classList.add('code-copy-btn--success');
+        setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('code-copy-btn--success'); }, 1500);
+      });
+    });
+    pre.style.position = 'relative';
+    pre.appendChild(btn);
+  });
+
+  // Add anchor links to headings
+  const headings = containerEl.querySelectorAll('h1, h2, h3, h4');
+  const seen = {};
+  headings.forEach(h => {
+    if (h.querySelector('.heading-anchor')) return;
+    let id = slugify(h.textContent);
+    if (seen[id]) { seen[id]++; id += '-' + seen[id]; } else { seen[id] = 1; }
+    h.id = id;
+    const anchor = document.createElement('a');
+    anchor.className = 'heading-anchor';
+    anchor.href = '#' + id;
+    anchor.textContent = '#';
+    anchor.setAttribute('aria-label', 'Link to this heading');
+    anchor.addEventListener('click', (e) => {
+      e.preventDefault();
+      navigator.clipboard.writeText(window.location.origin + window.location.pathname + '#' + id);
+      h.scrollIntoView({ behavior: 'smooth' });
+      window.history.replaceState(null, '', '#' + id);
+    });
+    h.appendChild(anchor);
+  });
+}
+
+function extractTOC(containerEl) {
+  if (!containerEl) return [];
+  const headings = containerEl.querySelectorAll('h1, h2, h3');
+  return Array.from(headings).map(h => ({
+    id: h.id,
+    text: h.textContent.replace(/#$/, '').trim(),
+    level: parseInt(h.tagName[1]),
+  }));
+}
+
 export default function PostView({ blogId, slug, onNavigate }) {
   const [post, setPost] = useState(null);
   const [blog, setBlog] = useState(null);
@@ -12,9 +71,11 @@ export default function PostView({ blogId, slug, onNavigate }) {
   const [commentAuthor, setCommentAuthor] = useState(getSavedAuthor());
   const [editing, setEditing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [toc, setToc] = useState([]);
   const manageKey = localStorage.getItem(`blog_key_${blogId}`);
   const canEdit = !!manageKey;
   const commentsEndRef = useRef(null);
+  const contentRef = useRef(null);
 
   useDocTitle(post?.title || null);
 
@@ -41,11 +102,15 @@ export default function PostView({ blogId, slug, onNavigate }) {
   }, [blogId, post?.id]);
 
   useEffect(() => {
-    if (post?.content_html && window.hljs) {
+    if (post?.content_html && contentRef.current) {
       setTimeout(() => {
-        document.querySelectorAll('.post-content pre code').forEach(el => {
-          window.hljs.highlightElement(el);
-        });
+        if (window.hljs) {
+          contentRef.current.querySelectorAll('pre code').forEach(el => {
+            window.hljs.highlightElement(el);
+          });
+        }
+        enhancePostContent(contentRef.current);
+        setToc(extractTOC(contentRef.current));
       }, 50);
     }
   }, [post?.content_html]);
@@ -151,7 +216,26 @@ export default function PostView({ blogId, slug, onNavigate }) {
           {post.status === 'draft' && <span className="badge badge--draft">Draft</span>}
         </div>
         {post.tags.length > 0 && <div className="post-tags">{post.tags.map((t, i) => <span key={i} className="tag">{t}</span>)}</div>}
+
+        {toc.length >= 3 && (
+          <nav className="toc" aria-label="Table of contents">
+            <div className="toc__title">Contents</div>
+            <ul className="toc__list">
+              {toc.map((item, i) => (
+                <li key={i} className={`toc__item toc__item--${item.level}`}>
+                  <a href={'#' + item.id} onClick={(e) => {
+                    e.preventDefault();
+                    document.getElementById(item.id)?.scrollIntoView({ behavior: 'smooth' });
+                    window.history.replaceState(null, '', '#' + item.id);
+                  }}>{item.text}</a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        )}
+
         <div
+          ref={contentRef}
           className="post-content"
           dangerouslySetInnerHTML={{ __html: post.content_html }}
         />
