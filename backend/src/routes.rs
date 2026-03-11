@@ -1459,6 +1459,7 @@ fn inject_post_meta(html: &mut String, blog_id: &str, slug: &str, db: &State<DbP
 
     if let Ok((title, description, blog_name, author, published_at, tags_json)) = result {
         let desc_clean = description.replace('\n', " ").chars().take(200).collect::<String>();
+        let escaped_desc = html_escape(&desc_clean);
         let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
         let keywords = if tags.is_empty() { String::new() } else {
             format!("\n    <meta name=\"keywords\" content=\"{}\" />", html_escape(&tags.join(", ")))
@@ -1467,28 +1468,37 @@ fn inject_post_meta(html: &mut String, blog_id: &str, slug: &str, db: &State<DbP
         let author_meta = if author.is_empty() { String::new() } else {
             format!("\n    <meta name=\"author\" content=\"{}\" />", html_escape(&author))
         };
+        let escaped_title = html_escape(&title);
+        let escaped_site = html_escape(&blog_name);
+        let og_url = format!("/blog/{}/post/{}", html_escape(blog_id), html_escape(slug));
 
         let og_tags = format!(
             "<meta property=\"og:title\" content=\"{title}\" />\n\
     <meta property=\"og:description\" content=\"{desc}\" />\n\
     <meta property=\"og:type\" content=\"article\" />\n\
+    <meta property=\"og:url\" content=\"{url}\" />\n\
     <meta property=\"og:site_name\" content=\"{site}\" />\n\
     <meta name=\"twitter:card\" content=\"summary\" />\n\
     <meta name=\"twitter:title\" content=\"{title}\" />\n\
-    <meta name=\"twitter:description\" content=\"{desc}\" />\n\
-    <meta name=\"description\" content=\"{desc}\" />{author}{pub_date}{keywords}",
-            title = html_escape(&title),
-            desc = html_escape(&desc_clean),
-            site = html_escape(&blog_name),
+    <meta name=\"twitter:description\" content=\"{desc}\" />{author}{pub_date}{keywords}",
+            title = escaped_title,
+            desc = escaped_desc,
+            url = og_url,
+            site = escaped_site,
             author = author_meta,
             pub_date = pub_date,
             keywords = keywords,
         );
 
+        // Replace generic description with post-specific one (avoid duplicate meta tags)
+        *html = html.replace(
+            "<meta name=\"description\" content=\"Create blogs, publish posts, and collaborate — all through a simple REST API. No signup required.\" />",
+            &format!("<meta name=\"description\" content=\"{}\" />", escaped_desc),
+        );
         *html = html.replace("</head>", &format!("    {}\n  </head>", og_tags));
         *html = html.replace(
             "<title>HNR Blog — API-first blogging for AI agents</title>",
-            &format!("<title>{} — {}</title>", html_escape(&title), html_escape(&blog_name)),
+            &format!("<title>{} — {}</title>", escaped_title, escaped_site),
         );
     }
 }
@@ -1504,22 +1514,33 @@ fn inject_blog_meta(html: &mut String, blog_id: &str, db: &State<DbPool>) {
 
     if let Ok((name, description)) = result {
         let desc = if description.is_empty() { format!("Posts from {}", name) } else { description };
+        let escaped_name = html_escape(&name);
+        let escaped_desc = html_escape(&desc);
+        let og_url = format!("/blog/{}", html_escape(blog_id));
+
         let og_tags = format!(
             "<meta property=\"og:title\" content=\"{name}\" />\n\
     <meta property=\"og:description\" content=\"{desc}\" />\n\
     <meta property=\"og:type\" content=\"website\" />\n\
+    <meta property=\"og:url\" content=\"{url}\" />\n\
     <meta property=\"og:site_name\" content=\"{name}\" />\n\
     <meta name=\"twitter:card\" content=\"summary\" />\n\
     <meta name=\"twitter:title\" content=\"{name}\" />\n\
     <meta name=\"twitter:description\" content=\"{desc}\" />",
-            name = html_escape(&name),
-            desc = html_escape(&desc),
+            name = escaped_name,
+            desc = escaped_desc,
+            url = og_url,
         );
 
+        // Replace generic description with blog-specific one (avoid duplicate meta tags)
+        *html = html.replace(
+            "<meta name=\"description\" content=\"Create blogs, publish posts, and collaborate — all through a simple REST API. No signup required.\" />",
+            &format!("<meta name=\"description\" content=\"{}\" />", escaped_desc),
+        );
         *html = html.replace("</head>", &format!("    {}\n  </head>", og_tags));
         *html = html.replace(
             "<title>HNR Blog — API-first blogging for AI agents</title>",
-            &format!("<title>{}</title>", html_escape(&name)),
+            &format!("<title>{}</title>", escaped_name),
         );
     }
 }

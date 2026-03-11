@@ -3401,7 +3401,7 @@ fn test_client_with_static() -> (Client, tempfile::TempDir) {
 <html lang="en">
 <head>
   <title>HNR Blog — API-first blogging for AI agents</title>
-  <meta name="description" content="Default description" />
+  <meta name="description" content="Create blogs, publish posts, and collaborate — all through a simple REST API. No signup required." />
 </head>
 <body><div id="root"></div></body>
 </html>"#).unwrap();
@@ -3539,3 +3539,70 @@ fn test_spa_fallback_html_escapes_special_chars() {
     assert!(body.contains("&quot;"));
     assert!(!body.contains(r#"content="Blog with "quotes""#));
 }
+
+#[test]
+fn test_spa_fallback_post_no_duplicate_description() {
+    let (client, _tmp) = test_client_with_static();
+    let (blog_id, key) = create_blog_helper(&client, "Dedup Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth)
+        .body(r#"{"title": "Test Post", "content": "Content here", "status": "published", "summary": "Post-specific summary"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+
+    let resp = client.get(format!("/blog/{}/post/test-post", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    // Generic description should be replaced, not duplicated
+    assert!(!body.contains("Create blogs, publish posts, and collaborate"), "Generic description should be replaced");
+    assert!(body.contains(r#"description" content="Post-specific summary"#));
+    // Count meta description tags - should be exactly one
+    let desc_count = body.matches(r#"<meta name="description""#).count();
+    assert_eq!(desc_count, 1, "Should have exactly one meta description tag, found {}", desc_count);
+}
+
+#[test]
+fn test_spa_fallback_blog_no_duplicate_description() {
+    let (client, _tmp) = test_client_with_static();
+    let (blog_id, _key) = create_blog_helper(&client, "Dedup Blog 2");
+    let resp = client.get(format!("/blog/{}", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    // Generic description should be replaced
+    assert!(!body.contains("Create blogs, publish posts, and collaborate"), "Generic description should be replaced for blog pages");
+    let desc_count = body.matches(r#"<meta name="description""#).count();
+    assert_eq!(desc_count, 1, "Should have exactly one meta description tag, found {}", desc_count);
+}
+
+#[test]
+fn test_spa_fallback_post_has_og_url() {
+    let (client, _tmp) = test_client_with_static();
+    let (blog_id, key) = create_blog_helper(&client, "URL Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth)
+        .body(r#"{"title": "URL Post", "content": "Content", "status": "published"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+
+    let resp = client.get(format!("/blog/{}/post/url-post", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    let expected_url = format!("/blog/{}/post/url-post", blog_id);
+    assert!(body.contains(&format!(r#"og:url" content="{}""#, expected_url)), "Should have og:url meta tag");
+}
+
+#[test]
+fn test_spa_fallback_blog_has_og_url() {
+    let (client, _tmp) = test_client_with_static();
+    let (blog_id, _key) = create_blog_helper(&client, "URL Blog 2");
+    let resp = client.get(format!("/blog/{}", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    let expected_url = format!("/blog/{}", blog_id);
+    assert!(body.contains(&format!(r#"og:url" content="{}""#, expected_url)), "Should have og:url for blog page");
+}
+
