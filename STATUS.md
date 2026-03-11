@@ -35,7 +35,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
   - Dark theme matching HNR design system
   - Auth key detection from URL (?key=) + localStorage persistence
 - **Delete blog** - DELETE /api/v1/blogs/{id} cascade deletes all posts, comments, views + FTS/semantic indexes
-- **Tests** - 151 Rust tests (127 integration + 12 unit × 2) + 170 Python SDK integration tests (321 total)
+- **Tests** - 160 Rust tests (136 integration + 12 unit × 2) + 170 Python SDK integration tests (321 total)
 - **Python SDK** — Complete zero-dependency client library (`sdk/python/blog.py`) wrapping all API endpoints. 164 integration tests covering health, blogs, posts, comments, pinning, feeds, search, stats, preview, export, discovery, related posts, error handling, blog/post updates, metadata (word count, reading time), view tracking, pinned ordering, deletion cascade, semantic search, auth edge cases, slug behavior, draft behavior, full lifecycle, multi-blog isolation, post summaries, constructor variants. Fixed `create_comment` field name bug (`author` → `author_name`). README with full API reference.
 - **Documentation** - Comprehensive README (195 lines), detailed llms.txt (all 27 endpoints)
 - **Docker** - 3-stage multi-stage build
@@ -50,6 +50,8 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 - Port: 3004
 
 ### What's Next (Priority Order)
+
+1. ~~**SPA fallback + Open Graph meta tags**~~ ✅ Done (2026-03-11 15:55 UTC) - direct URL access fixed, OG meta injection for social sharing
 
 1. ~~**Deploy to staging**~~ ✅ Done (2026-02-09 04:10 UTC)
 2. ~~**Syntax highlighting**~~ ✅ Done (2026-02-09 04:15 UTC)
@@ -76,7 +78,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 - Frontend needs `npm install` before build (node_modules not committed)
 - Staging uses ghcr.io image via Watchtower — do NOT use `docker compose up -d --build`
 
-### Completed (2026-02-09 Overnight Session 3 — 08:50 UTC)
+### Completed (2026-03-11 SPA Fallback — 15:55 UTC)
 
 - ~~**Post view tracking + blog stats**~~ ✅ — `post_views` table with viewer_ip + indexes. `view_count` on all PostResponse fields (list, get-by-slug, query_post). Views auto-recorded fire-and-forget on get_post_by_slug. `GET /api/v1/blogs/:id/stats` returns total/published posts, comments, total views + 24h/7d/30d breakdowns, top 10 posts by views. Also synced main.rs routes with lib.rs (related_posts + blog_stats were missing from binary). 1 new integration test (29 total: 4 unit + 25 integration). Commit: 1c5bd11
 
