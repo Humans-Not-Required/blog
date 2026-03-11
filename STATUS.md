@@ -52,6 +52,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 ### What's Next (Priority Order)
 
 1. ~~**SPA fallback + Open Graph meta tags**~~ ✅ Done (2026-03-11 15:55 UTC) - direct URL access fixed, OG meta injection for social sharing
+1. ~~**Fix OG duplicate description + add og:url**~~ ✅ Done (2026-03-11 17:20 UTC) - replaced generic meta description instead of duplicating, added og:url
 
 1. ~~**Deploy to staging**~~ ✅ Done (2026-02-09 04:10 UTC)
 2. ~~**Syntax highlighting**~~ ✅ Done (2026-02-09 04:15 UTC)
@@ -145,7 +146,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 - ~~**Markdown editor enhancements**~~ ✅ — Toolbar (bold/italic/link/code/etc), tab indent, word count, unsaved changes warning
 - Cleaned up stale WIP components, standardized .gitignore
 
-*Last updated: 2026-03-11 14:20 UTC — 152 Rust tests + 170 Python SDK tests (322 total). All CI green. Zero clippy warnings. **Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 4 published posts including new "Agent Infrastructure Stack" analysis (March 11). Project is feature-complete, polish-complete, and publicly accessible.*
+*Last updated: 2026-03-11 17:35 UTC — 160 Rust tests (140 integration + 12 unit × 2) + 170 Python SDK tests (330 total). All CI green. Zero clippy warnings. **Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 16 published posts. OG meta tags fixed (duplicate description bug). Project is feature-complete, polish-complete, and publicly accessible.*
 
 ## Incoming directions (2026-02-13T17:49:01Z)
 - Jordan: Cloudflare tunnel/DNS task being archived (he’s rolling out a more permanent solution). No action on my side for now. (task 8479e4ca)
