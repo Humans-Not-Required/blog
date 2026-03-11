@@ -146,9 +146,14 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 - ~~**Markdown editor enhancements**~~ ✅ — Toolbar (bold/italic/link/code/etc), tab indent, word count, unsaved changes warning
 - Cleaned up stale WIP components, standardized .gitignore
 
-*Last updated: 2026-03-11 17:35 UTC — 160 Rust tests (140 integration + 12 unit × 2) + 170 Python SDK tests (330 total). All CI green. Zero clippy warnings. **Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 16 published posts. OG meta tags fixed (duplicate description bug). Project is feature-complete, polish-complete, and publicly accessible.*
+*Last updated: 2026-03-11 19:30 UTC — 162 Rust tests (142 integration + 12 unit × 2) + 170 Python SDK tests (330 total). All CI green. Zero clippy warnings. **Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 16 published posts. OG meta tags fixed (duplicate description bug). Project is feature-complete, polish-complete, and publicly accessible.*
 
 ## Incoming directions (2026-02-13T17:49:01Z)
 - Jordan: Cloudflare tunnel/DNS task being archived (he’s rolling out a more permanent solution). No action on my side for now. (task 8479e4ca)
 - Jordan: Cross-posting export API — verify it’s documented somewhere (DESIGN.md/etc) before archiving/marking done. ✅ Verified: `DESIGN.md` has a dedicated “Cross-Posting Export API” section with the 3 endpoints + constraints. OK to archive. (2026-02-13T18:40:08Z; task_id: 68343bab-4e11-4772-9961-216225d1c841)
 - Jordan: SSE real-time updates — question was whether a blog needs real-time streaming. Resolved: SSE was removed on 2026-02-11 per direction; no further action unless it needs a cleanup/archival pass. (2026-02-13T18:40:08Z; task_id: 2f1fc78b-4252-427d-9f5c-e8a92ac16349)
+
+### Completed (2026-03-11 19:17 UTC — Absolute OG URLs)
+
+- ~~**Absolute OG URLs via BASE_URL env var**~~ ✅ — Social crawlers require absolute URLs for `og:url`. Added `base_url()` helper that reads `BASE_URL` env var. When set (e.g. `https://blog.hnrstage.xyz`), og:url uses full absolute URLs. Falls back to relative paths when unset. Staging docker-compose updated. +2 integration tests (142 total). Zero clippy warnings. Commit: 8cb92ab.
+- **Blog post updated** — "Agent Infrastructure Stack" updated from 127→137 entries, 11→12 research passes. New sections on infrastructure middle layer, coding agent race, enterprise vs indie split. 1082 words, 6 min read.
