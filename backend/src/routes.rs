@@ -1428,6 +1428,132 @@ const SKILLS_INDEX_JSON: &str = r#"{
 }"#;
 
 
+// ─── SPA Fallback + Open Graph Meta Tags ───
+
+/// Escape text for safe use in HTML attributes
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// Inject Open Graph meta tags for a blog post into the index.html template
+fn inject_post_meta(html: &mut String, blog_id: &str, slug: &str, db: &State<DbPool>) {
+    let conn = db.conn();
+    let result = conn.query_row(
+        "SELECT p.title, COALESCE(NULLIF(p.summary, ''), SUBSTR(p.content, 1, 200)),
+                b.name, p.author_name, p.published_at, p.tags
+         FROM posts p JOIN blogs b ON p.blog_id = b.id
+         WHERE p.blog_id = ?1 AND p.slug = ?2 AND p.status = 'published'",
+        rusqlite::params![blog_id, slug],
+        |row| Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, Option<String>>(4)?,
+            row.get::<_, String>(5)?,
+        )),
+    );
+
+    if let Ok((title, description, blog_name, author, published_at, tags_json)) = result {
+        let desc_clean = description.replace('\n', " ").chars().take(200).collect::<String>();
+        let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
+        let keywords = if tags.is_empty() { String::new() } else {
+            format!("\n    <meta name=\"keywords\" content=\"{}\" />", html_escape(&tags.join(", ")))
+        };
+        let pub_date = published_at.map(|d| format!("\n    <meta property=\"article:published_time\" content=\"{}\" />", html_escape(&d))).unwrap_or_default();
+        let author_meta = if author.is_empty() { String::new() } else {
+            format!("\n    <meta name=\"author\" content=\"{}\" />", html_escape(&author))
+        };
+
+        let og_tags = format!(
+            "<meta property=\"og:title\" content=\"{title}\" />\n\
+    <meta property=\"og:description\" content=\"{desc}\" />\n\
+    <meta property=\"og:type\" content=\"article\" />\n\
+    <meta property=\"og:site_name\" content=\"{site}\" />\n\
+    <meta name=\"twitter:card\" content=\"summary\" />\n\
+    <meta name=\"twitter:title\" content=\"{title}\" />\n\
+    <meta name=\"twitter:description\" content=\"{desc}\" />\n\
+    <meta name=\"description\" content=\"{desc}\" />{author}{pub_date}{keywords}",
+            title = html_escape(&title),
+            desc = html_escape(&desc_clean),
+            site = html_escape(&blog_name),
+            author = author_meta,
+            pub_date = pub_date,
+            keywords = keywords,
+        );
+
+        *html = html.replace("</head>", &format!("    {}\n  </head>", og_tags));
+        *html = html.replace(
+            "<title>HNR Blog — API-first blogging for AI agents</title>",
+            &format!("<title>{} — {}</title>", html_escape(&title), html_escape(&blog_name)),
+        );
+    }
+}
+
+/// Inject Open Graph meta tags for a blog listing page
+fn inject_blog_meta(html: &mut String, blog_id: &str, db: &State<DbPool>) {
+    let conn = db.conn();
+    let result = conn.query_row(
+        "SELECT name, description FROM blogs WHERE id = ?1",
+        rusqlite::params![blog_id],
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+    );
+
+    if let Ok((name, description)) = result {
+        let desc = if description.is_empty() { format!("Posts from {}", name) } else { description };
+        let og_tags = format!(
+            "<meta property=\"og:title\" content=\"{name}\" />\n\
+    <meta property=\"og:description\" content=\"{desc}\" />\n\
+    <meta property=\"og:type\" content=\"website\" />\n\
+    <meta property=\"og:site_name\" content=\"{name}\" />\n\
+    <meta name=\"twitter:card\" content=\"summary\" />\n\
+    <meta name=\"twitter:title\" content=\"{name}\" />\n\
+    <meta name=\"twitter:description\" content=\"{desc}\" />",
+            name = html_escape(&name),
+            desc = html_escape(&desc),
+        );
+
+        *html = html.replace("</head>", &format!("    {}\n  </head>", og_tags));
+        *html = html.replace(
+            "<title>HNR Blog — API-first blogging for AI agents</title>",
+            &format!("<title>{}</title>", html_escape(&name)),
+        );
+    }
+}
+
+/// SPA catch-all: serves index.html for non-API, non-static paths.
+/// Injects Open Graph meta tags for known SPA routes (blog posts, blogs).
+#[get("/<path..>", rank = 25)]
+pub fn spa_fallback(path: std::path::PathBuf, db: &State<DbPool>) -> Option<rocket::response::content::RawHtml<String>> {
+    let path_str = path.to_str().unwrap_or("");
+
+    // Don't catch API routes — let the JSON 404 catcher handle those
+    if path_str.starts_with("api/") || path_str.starts_with("api") {
+        return None;
+    }
+
+    let static_dir = std::env::var("STATIC_DIR").unwrap_or_else(|_| "static".to_string());
+    let index_path = std::path::Path::new(&static_dir).join("index.html");
+    let mut html = std::fs::read_to_string(&index_path).ok()?;
+
+    // Parse SPA route and inject appropriate meta tags
+    let components: Vec<&str> = path_str.split('/').filter(|s| !s.is_empty()).collect();
+
+    if components.len() == 4 && components[0] == "blog" && components[2] == "post" {
+        // /blog/:blog_id/post/:slug
+        inject_post_meta(&mut html, components[1], components[3], db);
+    } else if components.len() == 2 && components[0] == "blog" {
+        // /blog/:blog_id
+        inject_blog_meta(&mut html, components[1], db);
+    }
+
+    Some(rocket::response::content::RawHtml(html))
+}
+
+
 // ─── Catchers ───
 
 #[catch(401)]

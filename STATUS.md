@@ -143,7 +143,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 - ~~**Markdown editor enhancements**~~ ✅ — Toolbar (bold/italic/link/code/etc), tab indent, word count, unsaved changes warning
 - Cleaned up stale WIP components, standardized .gitignore
 
-*Last updated: 2026-03-01 07:10 UTC — 152 Rust tests + 170 Python SDK tests (322 total). All CI green. Zero clippy warnings. Staging deployed and healthy. Project is feature-complete and polish-complete — only remaining item is Cloudflare DNS (Jordan handling).*
+*Last updated: 2026-03-11 14:20 UTC — 152 Rust tests + 170 Python SDK tests (322 total). All CI green. Zero clippy warnings. **Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 4 published posts including new "Agent Infrastructure Stack" analysis (March 11). Project is feature-complete, polish-complete, and publicly accessible.*
 
 ## Incoming directions (2026-02-13T17:49:01Z)
 - Jordan: Cloudflare tunnel/DNS task being archived (he’s rolling out a more permanent solution). No action on my side for now. (task 8479e4ca)

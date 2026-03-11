@@ -3391,3 +3391,151 @@ fn test_blog_public_toggle_affects_listing() {
     let blogs: Vec<serde_json::Value> = resp.into_json().unwrap();
     assert!(!blogs.iter().any(|b| b["id"].as_str().unwrap() == id));
 }
+
+// ── SPA Fallback + Open Graph Meta Tags ──────────────────────────────────
+
+fn test_client_with_static() -> (Client, tempfile::TempDir) {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let index = tmp.path().join("index.html");
+    std::fs::write(&index, r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>HNR Blog — API-first blogging for AI agents</title>
+  <meta name="description" content="Default description" />
+</head>
+<body><div id="root"></div></body>
+</html>"#).unwrap();
+
+    std::env::set_var("STATIC_DIR", tmp.path().to_str().unwrap());
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    db::initialize(&conn);
+    let rocket = create_rocket(conn);
+    (Client::tracked(rocket).unwrap(), tmp)
+}
+
+#[test]
+fn test_spa_fallback_returns_html_for_unknown_paths() {
+    let (client, _tmp) = test_client_with_static();
+    let resp = client.get("/create").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    assert!(body.contains("<!DOCTYPE html>"));
+    assert!(body.contains("<div id=\"root\">"));
+}
+
+#[test]
+fn test_spa_fallback_blog_path_returns_html() {
+    let (client, _tmp) = test_client_with_static();
+    let (blog_id, _key) = create_blog_helper(&client, "Test Blog");
+    let resp = client.get(format!("/blog/{}", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    assert!(body.contains("<!DOCTYPE html>"));
+}
+
+#[test]
+fn test_spa_fallback_blog_has_og_meta_tags() {
+    let (client, _tmp) = test_client_with_static();
+    let (blog_id, _key) = create_blog_helper(&client, "My Great Blog");
+    let resp = client.get(format!("/blog/{}", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    assert!(body.contains(r#"og:title" content="My Great Blog"#));
+    assert!(body.contains(r#"og:type" content="website"#));
+    assert!(body.contains("<title>My Great Blog</title>"));
+}
+
+#[test]
+fn test_spa_fallback_post_path_has_og_meta_tags() {
+    let (client, _tmp) = test_client_with_static();
+    let (blog_id, key) = create_blog_helper(&client, "Tech Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    // Create and publish a post
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Hello World", "content": "This is my first post about testing", "status": "published", "summary": "A test summary"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let slug = post["slug"].as_str().unwrap();
+
+    let resp = client.get(format!("/blog/{}/post/{}", blog_id, slug)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    assert!(body.contains(r#"og:title" content="Hello World"#));
+    assert!(body.contains(r#"og:description" content="A test summary"#));
+    assert!(body.contains(r#"og:type" content="article"#));
+    assert!(body.contains(r#"og:site_name" content="Tech Blog"#));
+    assert!(body.contains(r#"twitter:card" content="summary"#));
+    assert!(body.contains("Hello World — Tech Blog</title>"));
+}
+
+#[test]
+fn test_spa_fallback_post_with_tags_has_keywords() {
+    let (client, _tmp) = test_client_with_static();
+    let (blog_id, key) = create_blog_helper(&client, "Tag Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth)
+        .body(r#"{"title": "Tagged Post", "content": "Content", "status": "published", "tags": ["rust", "testing"]}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+
+    let resp = client.get(format!("/blog/{}/post/tagged-post", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    assert!(body.contains(r#"keywords" content="rust, testing"#));
+}
+
+#[test]
+fn test_spa_fallback_draft_post_no_og_tags() {
+    let (client, _tmp) = test_client_with_static();
+    let (blog_id, key) = create_blog_helper(&client, "Draft Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth)
+        .body(r#"{"title": "Secret Draft", "content": "Hidden content"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+
+    // Draft post should not get OG tags (status defaults to 'draft')
+    let resp = client.get(format!("/blog/{}/post/secret-draft", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    // Should still serve index.html but without injected OG tags
+    assert!(body.contains("<!DOCTYPE html>"));
+    assert!(!body.contains(r#"og:title" content="Secret Draft"#));
+}
+
+#[test]
+fn test_spa_fallback_api_routes_still_return_json_404() {
+    let (client, _tmp) = test_client_with_static();
+    let resp = client.get("/api/v1/nonexistent").dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["code"], "NOT_FOUND");
+}
+
+#[test]
+fn test_spa_fallback_html_escapes_special_chars() {
+    let (client, _tmp) = test_client_with_static();
+    let resp = client.post("/api/v1/blogs")
+        .header(ContentType::JSON)
+        .body(r#"{"name": "Blog with \"quotes\" & <tags>"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let blog: serde_json::Value = resp.into_json().unwrap();
+    let blog_id = blog["id"].as_str().unwrap();
+
+    let resp = client.get(format!("/blog/{}", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    // Verify special characters are escaped in meta tags
+    assert!(body.contains("&amp;"));
+    assert!(body.contains("&lt;"));
+    assert!(body.contains("&quot;"));
+    assert!(!body.contains(r#"content="Blog with "quotes""#));
+}
