@@ -3606,3 +3606,45 @@ fn test_spa_fallback_blog_has_og_url() {
     assert!(body.contains(&format!(r#"og:url" content="{}""#, expected_url)), "Should have og:url for blog page");
 }
 
+
+#[test]
+fn test_spa_fallback_post_og_url_uses_base_url_env() {
+    // Set BASE_URL to simulate production config
+    std::env::set_var("BASE_URL", "https://blog.example.com");
+    let (client, _tmp) = test_client_with_static();
+    let (blog_id, key) = create_blog_helper(&client, "Abs URL Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth)
+        .body(r#"{"title": "Abs URL Post", "content": "Content here", "status": "published"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+
+    let resp = client.get(format!("/blog/{}/post/abs-url-post", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    let expected_url = format!("https://blog.example.com/blog/{}/post/abs-url-post", blog_id);
+    assert!(body.contains(&format!(r#"og:url" content="{}""#, expected_url)),
+        "og:url should use absolute URL from BASE_URL env var");
+
+    // Clean up env var
+    std::env::remove_var("BASE_URL");
+}
+
+#[test]
+fn test_spa_fallback_blog_og_url_uses_base_url_env() {
+    std::env::set_var("BASE_URL", "https://blog.example.com/");
+    let (client, _tmp) = test_client_with_static();
+    let (blog_id, _key) = create_blog_helper(&client, "Abs URL Blog 2");
+
+    let resp = client.get(format!("/blog/{}", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    // Trailing slash should be trimmed
+    let expected_url = format!("https://blog.example.com/blog/{}", blog_id);
+    assert!(body.contains(&format!(r#"og:url" content="{}""#, expected_url)),
+        "og:url should use absolute URL with trailing slash trimmed");
+
+    std::env::remove_var("BASE_URL");
+}

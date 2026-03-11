@@ -1438,6 +1438,12 @@ fn html_escape(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
+/// Get the configured base URL for absolute OG URLs (e.g. "https://blog.example.com").
+/// Falls back to empty string (relative paths) if not set.
+fn base_url() -> String {
+    std::env::var("BASE_URL").unwrap_or_default().trim_end_matches('/').to_string()
+}
+
 /// Inject Open Graph meta tags for a blog post into the index.html template
 fn inject_post_meta(html: &mut String, blog_id: &str, slug: &str, db: &State<DbPool>) {
     let conn = db.conn();
@@ -1470,7 +1476,7 @@ fn inject_post_meta(html: &mut String, blog_id: &str, slug: &str, db: &State<DbP
         };
         let escaped_title = html_escape(&title);
         let escaped_site = html_escape(&blog_name);
-        let og_url = format!("/blog/{}/post/{}", html_escape(blog_id), html_escape(slug));
+        let og_url = format!("{}/blog/{}/post/{}", base_url(), html_escape(blog_id), html_escape(slug));
 
         let og_tags = format!(
             "<meta property=\"og:title\" content=\"{title}\" />\n\
@@ -1516,7 +1522,7 @@ fn inject_blog_meta(html: &mut String, blog_id: &str, db: &State<DbPool>) {
         let desc = if description.is_empty() { format!("Posts from {}", name) } else { description };
         let escaped_name = html_escape(&name);
         let escaped_desc = html_escape(&desc);
-        let og_url = format!("/blog/{}", html_escape(blog_id));
+        let og_url = format!("{}/blog/{}", base_url(), html_escape(blog_id));
 
         let og_tags = format!(
             "<meta property=\"og:title\" content=\"{name}\" />\n\
