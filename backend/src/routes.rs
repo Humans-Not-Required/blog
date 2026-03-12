@@ -1199,6 +1199,132 @@ pub fn blog_stats(blog_id: &str, db: &State<DbPool>) -> Result<Json<BlogStats>, 
     }))
 }
 
+
+// ─── Tags Discovery ───
+
+#[derive(Serialize)]
+pub struct TagInfo {
+    pub tag: String,
+    pub post_count: i64,
+}
+
+/// GET /api/v1/tags?blog_id=<optional> — list all tags with post counts.
+/// Without blog_id: tags from all published posts in public blogs.
+/// With blog_id: tags from published posts in that specific blog.
+#[get("/tags?<blog_id>")]
+pub fn list_tags(blog_id: Option<&str>, db: &State<DbPool>) -> Result<Json<Vec<TagInfo>>, (Status, Json<ApiError>)> {
+    let conn = db.conn();
+
+    if let Some(bid) = blog_id {
+        // Verify blog exists
+        conn.query_row("SELECT 1 FROM blogs WHERE id = ?1", [bid], |_| Ok(()))
+            .map_err(|_| err(Status::NotFound, "Blog not found", "NOT_FOUND"))?;
+
+        let mut stmt = conn.prepare(
+            "SELECT j.value AS tag, COUNT(*) AS post_count
+             FROM posts p, json_each(p.tags) j
+             WHERE p.status = 'published' AND p.blog_id = ?1
+             GROUP BY j.value
+             ORDER BY post_count DESC, tag ASC"
+        ).map_err(|e| db_err(&e.to_string()))?;
+
+        let tags = stmt.query_map([bid], |row| {
+            Ok(TagInfo {
+                tag: row.get(0)?,
+                post_count: row.get(1)?,
+            })
+        }).map_err(|e| db_err(&e.to_string()))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+        Ok(Json(tags))
+    } else {
+        // Global: only published posts in public blogs
+        let mut stmt = conn.prepare(
+            "SELECT j.value AS tag, COUNT(*) AS post_count
+             FROM posts p
+             JOIN blogs b ON b.id = p.blog_id
+             , json_each(p.tags) j
+             WHERE p.status = 'published' AND b.is_public = 1
+             GROUP BY j.value
+             ORDER BY post_count DESC, tag ASC"
+        ).map_err(|e| db_err(&e.to_string()))?;
+
+        let tags = stmt.query_map([], |row| {
+            Ok(TagInfo {
+                tag: row.get(0)?,
+                post_count: row.get(1)?,
+            })
+        }).map_err(|e| db_err(&e.to_string()))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+        Ok(Json(tags))
+    }
+}
+
+// ─── Global Recent Posts ───
+
+#[derive(Serialize)]
+pub struct RecentPost {
+    pub id: String,
+    pub blog_id: String,
+    pub blog_name: String,
+    pub title: String,
+    pub slug: String,
+    pub summary: String,
+    pub tags: Vec<String>,
+    pub author_name: String,
+    pub published_at: Option<String>,
+    pub word_count: u64,
+    pub reading_time_minutes: u32,
+    pub view_count: i64,
+    pub comment_count: i64,
+}
+
+/// GET /api/v1/posts/recent?limit=<N> — latest published posts across all public blogs.
+/// Returns up to `limit` (default 20, max 100) most recently published posts.
+#[get("/posts/recent?<limit>")]
+pub fn recent_posts(limit: Option<i64>, db: &State<DbPool>) -> Result<Json<Vec<RecentPost>>, (Status, Json<ApiError>)> {
+    let conn = db.conn();
+    let lim = limit.unwrap_or(20).clamp(1, 100);
+
+    let mut stmt = conn.prepare(
+        "SELECT p.id, p.blog_id, b.name, p.title, p.slug, p.summary, p.tags, p.author_name, p.published_at, p.content,
+                (SELECT COUNT(*) FROM post_views v WHERE v.post_id = p.id) as view_count,
+                (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) as comment_count
+         FROM posts p
+         JOIN blogs b ON b.id = p.blog_id
+         WHERE p.status = 'published' AND b.is_public = 1
+         ORDER BY p.published_at DESC NULLS LAST
+         LIMIT ?1"
+    ).map_err(|e| db_err(&e.to_string()))?;
+
+    let posts = stmt.query_map(rusqlite::params![lim], |row| {
+        let content: String = row.get(9)?;
+        let wc = compute_word_count(&content);
+        Ok(RecentPost {
+            id: row.get(0)?,
+            blog_id: row.get(1)?,
+            blog_name: row.get(2)?,
+            title: row.get(3)?,
+            slug: row.get(4)?,
+            summary: row.get(5)?,
+            tags: serde_json::from_str(&row.get::<_, String>(6)?).unwrap_or_default(),
+            author_name: row.get(7)?,
+            published_at: row.get(8)?,
+            word_count: wc,
+            reading_time_minutes: compute_reading_time(wc),
+            view_count: row.get(10)?,
+            comment_count: row.get(11)?,
+        })
+    }).map_err(|e| db_err(&e.to_string()))?
+    .filter_map(|r| r.ok())
+    .collect();
+
+    Ok(Json(posts))
+}
+
 // ─── Preview ───
 
 #[derive(Deserialize)]

@@ -3971,3 +3971,251 @@ fn test_spa_fallback_post_canonical_uses_base_url() {
 
     std::env::remove_var("BASE_URL");
 }
+
+// ─── Tags Discovery Tests ───
+
+#[test]
+fn test_list_tags_empty_when_no_posts() {
+    let client = test_client();
+    let resp = client.get("/api/v1/tags").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let tags: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert!(tags.is_empty(), "should be empty with no published posts");
+}
+
+#[test]
+fn test_list_tags_returns_tags_with_counts() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Tag Test Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    // Make blog public so global tags can see it
+    client.patch(format!("/api/v1/blogs/{}", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"is_public": true}"#)
+        .dispatch();
+
+    // Create posts with tags
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Post A", "content": "content", "tags": ["rust", "web"], "status": "published"}"#)
+        .dispatch();
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Post B", "content": "content", "tags": ["rust", "ai"], "status": "published"}"#)
+        .dispatch();
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Post C", "content": "content", "tags": ["rust"], "status": "published"}"#)
+        .dispatch();
+
+    // Global tags
+    let resp = client.get("/api/v1/tags").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let tags: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(tags.len(), 3, "should have 3 unique tags");
+    // Sorted by count desc: rust(3), ai(1), web(1)
+    assert_eq!(tags[0]["tag"], "rust");
+    assert_eq!(tags[0]["post_count"], 3);
+
+    // Blog-specific tags
+    let resp = client.get(format!("/api/v1/tags?blog_id={}", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let tags: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(tags.len(), 3);
+    assert_eq!(tags[0]["tag"], "rust");
+    assert_eq!(tags[0]["post_count"], 3);
+}
+
+#[test]
+fn test_list_tags_excludes_draft_posts() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Draft Tag Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    client.patch(format!("/api/v1/blogs/{}", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"is_public": true}"#)
+        .dispatch();
+
+    // Published post with tag
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Published", "content": "c", "tags": ["visible"], "status": "published"}"#)
+        .dispatch();
+    // Draft post with different tag
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Draft", "content": "c", "tags": ["hidden"], "status": "draft"}"#)
+        .dispatch();
+
+    let resp = client.get("/api/v1/tags").dispatch();
+    let tags: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(tags.len(), 1, "draft tags should be excluded");
+    assert_eq!(tags[0]["tag"], "visible");
+}
+
+#[test]
+fn test_list_tags_excludes_private_blogs_in_global() {
+    let client = test_client();
+    // Private blog (default)
+    let (blog_id, key) = create_blog_helper(&client, "Private Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Private Post", "content": "c", "tags": ["secret"], "status": "published"}"#)
+        .dispatch();
+
+    // Global tags should be empty (blog is private)
+    let resp = client.get("/api/v1/tags").dispatch();
+    let tags: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert!(tags.is_empty(), "private blog tags should not appear in global listing");
+
+    // Blog-specific tags should still work
+    let resp = client.get(format!("/api/v1/tags?blog_id={}", blog_id)).dispatch();
+    let tags: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(tags.len(), 1, "blog-specific tags should work for private blogs");
+}
+
+#[test]
+fn test_list_tags_blog_not_found() {
+    let client = test_client();
+    let resp = client.get("/api/v1/tags?blog_id=nonexistent").dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+}
+
+// ─── Global Recent Posts Tests ───
+
+#[test]
+fn test_recent_posts_empty() {
+    let client = test_client();
+    let resp = client.get("/api/v1/posts/recent").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert!(posts.is_empty());
+}
+
+#[test]
+fn test_recent_posts_returns_published_from_public_blogs() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Recent Posts Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    // Make blog public
+    client.patch(format!("/api/v1/blogs/{}", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"is_public": true}"#)
+        .dispatch();
+
+    // Create published post
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Recent Test", "content": "hello world content here", "tags": ["test"], "status": "published", "author_name": "Bot"}"#)
+        .dispatch();
+
+    let resp = client.get("/api/v1/posts/recent").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts.len(), 1);
+    assert_eq!(posts[0]["title"], "Recent Test");
+    assert_eq!(posts[0]["blog_name"], "Recent Posts Blog");
+    assert_eq!(posts[0]["author_name"], "Bot");
+    assert!(posts[0]["word_count"].as_u64().unwrap() > 0);
+    assert!(posts[0]["reading_time_minutes"].as_u64().unwrap() >= 1);
+}
+
+#[test]
+fn test_recent_posts_excludes_private_blogs_and_drafts() {
+    let client = test_client();
+
+    // Public blog with published post
+    let (pub_id, pub_key) = create_blog_helper(&client, "Public Blog");
+    let pub_auth = Header::new("Authorization", format!("Bearer {}", pub_key));
+    client.patch(format!("/api/v1/blogs/{}", pub_id))
+        .header(ContentType::JSON).header(pub_auth.clone())
+        .body(r#"{"is_public": true}"#)
+        .dispatch();
+    client.post(format!("/api/v1/blogs/{}/posts", pub_id))
+        .header(ContentType::JSON).header(pub_auth.clone())
+        .body(r#"{"title": "Visible", "content": "c", "status": "published"}"#)
+        .dispatch();
+
+    // Private blog with published post
+    let (priv_id, priv_key) = create_blog_helper(&client, "Private Blog");
+    let priv_auth = Header::new("Authorization", format!("Bearer {}", priv_key));
+    client.post(format!("/api/v1/blogs/{}/posts", priv_id))
+        .header(ContentType::JSON).header(priv_auth.clone())
+        .body(r#"{"title": "Hidden", "content": "c", "status": "published"}"#)
+        .dispatch();
+
+    // Public blog with draft post
+    client.post(format!("/api/v1/blogs/{}/posts", pub_id))
+        .header(ContentType::JSON).header(pub_auth.clone())
+        .body(r#"{"title": "Draft", "content": "c", "status": "draft"}"#)
+        .dispatch();
+
+    let resp = client.get("/api/v1/posts/recent").dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts.len(), 1, "only published posts from public blogs");
+    assert_eq!(posts[0]["title"], "Visible");
+}
+
+#[test]
+fn test_recent_posts_respects_limit() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Limit Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    client.patch(format!("/api/v1/blogs/{}", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"is_public": true}"#)
+        .dispatch();
+
+    for i in 0..5 {
+        client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+            .header(ContentType::JSON).header(auth.clone())
+            .body(format!(r#"{{"title": "Post {}", "content": "content", "status": "published"}}"#, i))
+            .dispatch();
+    }
+
+    let resp = client.get("/api/v1/posts/recent?limit=2").dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts.len(), 2, "should respect limit parameter");
+}
+
+#[test]
+fn test_recent_posts_across_multiple_blogs() {
+    let client = test_client();
+
+    let (blog1_id, key1) = create_blog_helper(&client, "Blog One");
+    let auth1 = Header::new("Authorization", format!("Bearer {}", key1));
+    client.patch(format!("/api/v1/blogs/{}", blog1_id))
+        .header(ContentType::JSON).header(auth1.clone())
+        .body(r#"{"is_public": true}"#)
+        .dispatch();
+
+    let (blog2_id, key2) = create_blog_helper(&client, "Blog Two");
+    let auth2 = Header::new("Authorization", format!("Bearer {}", key2));
+    client.patch(format!("/api/v1/blogs/{}", blog2_id))
+        .header(ContentType::JSON).header(auth2.clone())
+        .body(r#"{"is_public": true}"#)
+        .dispatch();
+
+    client.post(format!("/api/v1/blogs/{}/posts", blog1_id))
+        .header(ContentType::JSON).header(auth1.clone())
+        .body(r#"{"title": "From Blog One", "content": "c", "status": "published"}"#)
+        .dispatch();
+    client.post(format!("/api/v1/blogs/{}/posts", blog2_id))
+        .header(ContentType::JSON).header(auth2.clone())
+        .body(r#"{"title": "From Blog Two", "content": "c", "status": "published"}"#)
+        .dispatch();
+
+    let resp = client.get("/api/v1/posts/recent").dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts.len(), 2, "should include posts from multiple blogs");
+
+    let blog_names: Vec<&str> = posts.iter().map(|p| p["blog_name"].as_str().unwrap()).collect();
+    assert!(blog_names.contains(&"Blog One"));
+    assert!(blog_names.contains(&"Blog Two"));
+}

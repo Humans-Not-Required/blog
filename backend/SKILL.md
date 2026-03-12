@@ -79,6 +79,15 @@ GET /api/v1/blogs/{id}/posts/{post_id}/related?limit=N  — related posts (tag o
 GET /api/v1/blogs/{id}/stats                         — blog stats: total views (24h/7d/30d), top posts
 ```
 
+## Tags & Discovery
+
+```
+GET /api/v1/tags                                     — list all tags with post counts (global, public blogs only)
+  ?blog_id=ID                                        — filter to specific blog
+GET /api/v1/posts/recent                             — latest posts across all public blogs
+  ?limit=N                                           — max results (default 20, max 100)
+```
+
 ## Feeds
 
 ```

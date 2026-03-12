@@ -890,6 +890,129 @@
           }
         }
       }
+    },
+    "/tags": {
+      "get": {
+        "summary": "List all tags with post counts",
+        "description": "Returns all tags used across published posts, ordered by post count descending. Without blog_id, only includes tags from public blogs. With blog_id, includes tags from that specific blog.",
+        "parameters": [
+          {
+            "name": "blog_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional blog ID to filter tags to a specific blog"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of tags with counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "tag": {
+                        "type": "string"
+                      },
+                      "post_count": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Blog not found (when blog_id specified)"
+          }
+        }
+      }
+    },
+    "/posts/recent": {
+      "get": {
+        "summary": "Get recent posts across all public blogs",
+        "description": "Returns the most recently published posts from all public blogs. Useful for content discovery and aggregation.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            },
+            "description": "Maximum number of posts to return (default 20, max 100)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of recent posts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "blog_id": {
+                        "type": "string"
+                      },
+                      "blog_name": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "slug": {
+                        "type": "string"
+                      },
+                      "summary": {
+                        "type": "string"
+                      },
+                      "tags": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "author_name": {
+                        "type": "string"
+                      },
+                      "published_at": {
+                        "type": "string",
+                        "nullable": true
+                      },
+                      "word_count": {
+                        "type": "integer"
+                      },
+                      "reading_time_minutes": {
+                        "type": "integer"
+                      },
+                      "view_count": {
+                        "type": "integer"
+                      },
+                      "comment_count": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
