@@ -1438,6 +1438,15 @@ fn html_escape(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
+/// Escape a string for safe embedding in JSON values
+fn json_escape(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t")
+}
+
 /// Get the configured base URL for absolute OG URLs (e.g. "https://blog.example.com").
 /// Falls back to empty string (relative paths) if not set.
 fn base_url() -> String {
@@ -1449,7 +1458,8 @@ fn inject_post_meta(html: &mut String, blog_id: &str, slug: &str, db: &State<DbP
     let conn = db.conn();
     let result = conn.query_row(
         "SELECT p.title, COALESCE(NULLIF(p.summary, ''), SUBSTR(p.content, 1, 200)),
-                b.name, p.author_name, p.published_at, p.tags
+                b.name, p.author_name, p.published_at, p.tags,
+                p.updated_at
          FROM posts p JOIN blogs b ON p.blog_id = b.id
          WHERE p.blog_id = ?1 AND p.slug = ?2 AND p.status = 'published'",
         rusqlite::params![blog_id, slug],
@@ -1460,17 +1470,18 @@ fn inject_post_meta(html: &mut String, blog_id: &str, slug: &str, db: &State<DbP
             row.get::<_, String>(3)?,
             row.get::<_, Option<String>>(4)?,
             row.get::<_, String>(5)?,
+            row.get::<_, String>(6)?,
         )),
     );
 
-    if let Ok((title, description, blog_name, author, published_at, tags_json)) = result {
+    if let Ok((title, description, blog_name, author, published_at, tags_json, updated_at)) = result {
         let desc_clean = description.replace('\n', " ").chars().take(200).collect::<String>();
         let escaped_desc = html_escape(&desc_clean);
         let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
         let keywords = if tags.is_empty() { String::new() } else {
             format!("\n    <meta name=\"keywords\" content=\"{}\" />", html_escape(&tags.join(", ")))
         };
-        let pub_date = published_at.map(|d| format!("\n    <meta property=\"article:published_time\" content=\"{}\" />", html_escape(&d))).unwrap_or_default();
+        let pub_date = published_at.as_ref().map(|d| format!("\n    <meta property=\"article:published_time\" content=\"{}\" />", html_escape(d))).unwrap_or_default();
         let author_meta = if author.is_empty() { String::new() } else {
             format!("\n    <meta name=\"author\" content=\"{}\" />", html_escape(&author))
         };
@@ -1496,12 +1507,32 @@ fn inject_post_meta(html: &mut String, blog_id: &str, slug: &str, db: &State<DbP
             keywords = keywords,
         );
 
+        // Build JSON-LD structured data for rich search results
+        let json_ld_author = if author.is_empty() {
+            String::new()
+        } else {
+            format!(r#","author":{{"@type":"Person","name":"{}"}}"#, json_escape(&author))
+        };
+        let json_ld_pub = published_at.as_deref().map(|d| format!(r#","datePublished":"{}""#, json_escape(d))).unwrap_or_default();
+        let json_ld_mod = format!(r#","dateModified":"{}""#, json_escape(&updated_at));
+        let json_ld_kw = if tags.is_empty() {
+            String::new()
+        } else {
+            let kw_list: Vec<String> = tags.iter().map(|t| format!(r#""{}""#, json_escape(t))).collect();
+            format!(r#","keywords":[{}]"#, kw_list.join(","))
+        };
+        let json_ld = format!(
+            r#"<script type="application/ld+json">{{"@context":"https://schema.org","@type":"BlogPosting","headline":"{}","description":"{}","url":"{}"{}{}{}{}}}</script>"#,
+            json_escape(&title), json_escape(&desc_clean), og_url,
+            json_ld_author, json_ld_pub, json_ld_mod, json_ld_kw,
+        );
+
         // Replace generic description with post-specific one (avoid duplicate meta tags)
         *html = html.replace(
             "<meta name=\"description\" content=\"Create blogs, publish posts, and collaborate — all through a simple REST API. No signup required.\" />",
             &format!("<meta name=\"description\" content=\"{}\" />", escaped_desc),
         );
-        *html = html.replace("</head>", &format!("    {}\n  </head>", og_tags));
+        *html = html.replace("</head>", &format!("    {}\n    {}\n  </head>", og_tags, json_ld));
         *html = html.replace(
             "<title>HNR Blog — API-first blogging for AI agents</title>",
             &format!("<title>{} — {}</title>", escaped_title, escaped_site),
@@ -1538,12 +1569,18 @@ fn inject_blog_meta(html: &mut String, blog_id: &str, db: &State<DbPool>) {
             url = og_url,
         );
 
+        // Build JSON-LD structured data for blog listing
+        let json_ld = format!(
+            r#"<script type="application/ld+json">{{"@context":"https://schema.org","@type":"Blog","name":"{}","description":"{}","url":"{}"}}</script>"#,
+            json_escape(&name), json_escape(&desc), og_url,
+        );
+
         // Replace generic description with blog-specific one (avoid duplicate meta tags)
         *html = html.replace(
             "<meta name=\"description\" content=\"Create blogs, publish posts, and collaborate — all through a simple REST API. No signup required.\" />",
             &format!("<meta name=\"description\" content=\"{}\" />", escaped_desc),
         );
-        *html = html.replace("</head>", &format!("    {}\n  </head>", og_tags));
+        *html = html.replace("</head>", &format!("    {}\n    {}\n  </head>", og_tags, json_ld));
         *html = html.replace(
             "<title>HNR Blog — API-first blogging for AI agents</title>",
             &format!("<title>{}</title>", escaped_name),

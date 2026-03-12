@@ -3773,3 +3773,84 @@ fn test_sitemap_excludes_draft_posts() {
 
     std::env::remove_var("BASE_URL");
 }
+
+#[test]
+fn test_spa_fallback_post_has_json_ld() {
+    let (client, _tmp) = test_client_with_static();
+    let (blog_id, key) = create_blog_helper(&client, "LD Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "JSON-LD Test", "content": "Testing structured data injection", "status": "published", "summary": "Structured data test", "tags": ["seo", "testing"]}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let slug = post["slug"].as_str().unwrap();
+
+    let resp = client.get(format!("/blog/{}/post/{}", blog_id, slug)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+
+    // JSON-LD script tag present
+    assert!(body.contains(r#"<script type="application/ld+json">"#), "JSON-LD script tag missing");
+    assert!(body.contains(r#""@context":"https://schema.org""#), "Schema.org context missing");
+    assert!(body.contains(r#""@type":"BlogPosting""#), "BlogPosting type missing");
+    assert!(body.contains(r#""headline":"JSON-LD Test""#), "headline missing");
+    assert!(body.contains(r#""description":"Structured data test""#), "description missing");
+    assert!(body.contains(r#""dateModified""#), "dateModified missing");
+    assert!(body.contains(r#""keywords":["seo","testing"]"#), "keywords missing");
+}
+
+#[test]
+fn test_spa_fallback_post_json_ld_has_author() {
+    let (client, _tmp) = test_client_with_static();
+    let (blog_id, key) = create_blog_helper(&client, "Author Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Author Test", "content": "Post with author", "status": "published", "author_name": "Nanook"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let slug = post["slug"].as_str().unwrap();
+
+    let resp = client.get(format!("/blog/{}/post/{}", blog_id, slug)).dispatch();
+    let body = resp.into_string().unwrap();
+
+    assert!(body.contains(r#""author":{"@type":"Person","name":"Nanook"}"#), "author JSON-LD missing");
+}
+
+#[test]
+fn test_spa_fallback_blog_has_json_ld() {
+    let (client, _tmp) = test_client_with_static();
+    let (blog_id, _key) = create_blog_helper(&client, "Blog LD Test");
+
+    let resp = client.get(format!("/blog/{}", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+
+    assert!(body.contains(r#"<script type="application/ld+json">"#), "JSON-LD script tag missing");
+    assert!(body.contains(r#""@type":"Blog""#), "Blog type missing");
+    assert!(body.contains(r#""name":"Blog LD Test""#), "blog name missing in JSON-LD");
+}
+
+#[test]
+fn test_spa_fallback_draft_post_no_json_ld() {
+    let (client, _tmp) = test_client_with_static();
+    let (blog_id, key) = create_blog_helper(&client, "Draft Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Draft Post", "content": "This is a draft", "status": "draft"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+
+    let resp = client.get(format!("/blog/{}/post/draft-post", blog_id)).dispatch();
+    let body = resp.into_string().unwrap();
+
+    // Draft posts should not have BlogPosting JSON-LD
+    assert!(!body.contains(r#""@type":"BlogPosting""#), "draft should not have BlogPosting JSON-LD");
+}
