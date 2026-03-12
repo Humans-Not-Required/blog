@@ -52,6 +52,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 ### What's Next (Priority Order)
 
 1. ~~**SPA fallback + Open Graph meta tags**~~ ✅ Done (2026-03-11 15:55 UTC) - direct URL access fixed, OG meta injection for social sharing
+1. ~~**JSON-LD structured data**~~ ✅ Done (2026-03-12 18:20 UTC) - BlogPosting + Blog Schema.org markup for rich search results, json_escape helper, dateModified from updated_at, 4 new tests
 1. ~~**Fix OG duplicate description + add og:url**~~ ✅ Done (2026-03-11 17:20 UTC) - replaced generic meta description instead of duplicating, added og:url
 
 1. ~~**Deploy to staging**~~ ✅ Done (2026-02-09 04:10 UTC)
