@@ -53,6 +53,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 
 1. ~~**SPA fallback + Open Graph meta tags**~~ ✅ Done (2026-03-11 15:55 UTC) - direct URL access fixed, OG meta injection for social sharing
 1. ~~**JSON-LD structured data**~~ ✅ Done (2026-03-12 18:20 UTC) - BlogPosting + Blog Schema.org markup for rich search results, json_escape helper, dateModified from updated_at, 4 new tests
+1. ~~**Canonical URLs + Feed auto-discovery**~~ ✅ Done (2026-03-12 20:30 UTC) - `<link rel="canonical">` on post/blog pages, `<link rel="alternate">` for RSS+JSON Feed auto-discovery, supports BASE_URL, 6 new tests
 1. ~~**Fix OG duplicate description + add og:url**~~ ✅ Done (2026-03-11 17:20 UTC) - replaced generic meta description instead of duplicating, added og:url
 
 1. ~~**Deploy to staging**~~ ✅ Done (2026-02-09 04:10 UTC)
@@ -147,7 +148,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 - ~~**Markdown editor enhancements**~~ ✅ — Toolbar (bold/italic/link/code/etc), tab indent, word count, unsaved changes warning
 - Cleaned up stale WIP components, standardized .gitignore
 
-*Last updated: 2026-03-12 16:25 UTC — 168 Rust tests (148 integration + 12 unit × 2) + 170 Python SDK tests (336 total). All CI green. Zero clippy warnings. **Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 16 published posts. SEO infrastructure (sitemap.xml + robots.txt) added. Project is feature-complete, polish-complete, and publicly accessible.*
+*Last updated: 2026-03-12 20:30 UTC — 170 Rust tests (158 integration + 12 unit) + 170 Python SDK tests (340 total). All CI green. Zero clippy warnings. **Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 16 published posts. SEO complete: sitemap + robots.txt + OG tags + JSON-LD + canonical URLs + feed auto-discovery. Project is feature-complete, polish-complete, and publicly accessible.*
 
 ### Completed (2026-03-12 16:25 UTC — SEO Discovery)
 
