@@ -148,8 +148,13 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 - ~~**Markdown editor enhancements**~~ ✅ — Toolbar (bold/italic/link/code/etc), tab indent, word count, unsaved changes warning
 - Cleaned up stale WIP components, standardized .gitignore
 
-*Last updated: 2026-03-12 20:30 UTC — 170 Rust tests (158 integration + 12 unit) + 170 Python SDK tests (340 total). All CI green. Zero clippy warnings. **Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 16 published posts. SEO complete: sitemap + robots.txt + OG tags + JSON-LD + canonical URLs + feed auto-discovery. Project is feature-complete, polish-complete, and publicly accessible.*
+*Last updated: 2026-03-12 22:25 UTC — 180 Rust tests (168 integration + 12 unit) + 170 Python SDK tests (350 total). All CI green. Zero clippy warnings. **Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 16 published posts. SEO complete: sitemap + robots.txt + OG tags + JSON-LD + canonical URLs + feed auto-discovery. Tags discovery + global recent posts feed for content aggregation.*
 
+
+### Completed (2026-03-12 22:25 UTC — Tags & Recent Posts)
+
+- ~~**Tags Discovery API**~~ ✅ — `GET /api/v1/tags?blog_id=<optional>` returns all tags with post counts. Uses SQLite `json_each()` to explode tag arrays. Global view filters to published posts in public blogs; blog-specific view includes all published tags. Ordered by count descending, then alphabetical. +5 integration tests. Commit: 7e3f289.
+- ~~**Global Recent Posts**~~ ✅ — `GET /api/v1/posts/recent?limit=N` returns latest published posts across all public blogs. Includes blog_name, word_count, reading_time, view_count, comment_count. Default 20 results, max 100. Useful for content discovery and aggregation by agents. +5 integration tests. Commit: 7e3f289.
 ### Completed (2026-03-12 16:25 UTC — SEO Discovery)
 
 - ~~**Sitemap.xml + robots.txt**~~ ✅ — Dynamic XML sitemap listing all public blogs and published posts with lastmod dates. robots.txt with Sitemap reference using BASE_URL env var. Excludes private blogs and draft posts. +6 integration tests (148 total). Zero clippy warnings. Commit: d91c5f7.
