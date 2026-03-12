@@ -1551,6 +1551,72 @@ fn inject_blog_meta(html: &mut String, blog_id: &str, db: &State<DbPool>) {
     }
 }
 
+/// GET /sitemap.xml — XML sitemap for SEO crawlers
+#[get("/sitemap.xml")]
+pub fn sitemap_xml(db: &State<DbPool>) -> (rocket::http::ContentType, String) {
+    let base = base_url();
+    let conn = db.conn();
+
+    let mut xml = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    xml.push_str("<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">\n");
+
+    // Home page
+    if !base.is_empty() {
+        xml.push_str(&format!("  <url>\n    <loc>{}/</loc>\n    <changefreq>daily</changefreq>\n    <priority>1.0</priority>\n  </url>\n", base));
+    }
+
+    // Collect public blogs
+    let mut blog_stmt = conn.prepare(
+        "SELECT id, updated_at FROM blogs WHERE is_public = 1 ORDER BY created_at DESC"
+    ).unwrap();
+    let blogs: Vec<(String, String)> = blog_stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    }).unwrap().filter_map(|r| r.ok()).collect();
+
+    for (blog_id, blog_updated) in &blogs {
+        // Blog page
+        let loc = if base.is_empty() {
+            format!("/blog/{}", blog_id)
+        } else {
+            format!("{}/blog/{}", base, blog_id)
+        };
+        let lastmod = &blog_updated[..10]; // YYYY-MM-DD
+        xml.push_str(&format!("  <url>\n    <loc>{}</loc>\n    <lastmod>{}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.8</priority>\n  </url>\n", loc, lastmod));
+
+        // Published posts for this blog
+        let mut post_stmt = conn.prepare(
+            "SELECT slug, updated_at FROM posts WHERE blog_id = ?1 AND status = 'published' ORDER BY published_at DESC"
+        ).unwrap();
+        let posts: Vec<(String, String)> = post_stmt.query_map([blog_id.as_str()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        }).unwrap().filter_map(|r| r.ok()).collect();
+
+        for (slug, post_updated) in &posts {
+            let post_loc = if base.is_empty() {
+                format!("/blog/{}/post/{}", blog_id, slug)
+            } else {
+                format!("{}/blog/{}/post/{}", base, blog_id, slug)
+            };
+            let post_lastmod = &post_updated[..10];
+            xml.push_str(&format!("  <url>\n    <loc>{}</loc>\n    <lastmod>{}</lastmod>\n    <changefreq>monthly</changefreq>\n    <priority>0.6</priority>\n  </url>\n", post_loc, post_lastmod));
+        }
+    }
+
+    xml.push_str("</urlset>\n");
+    (rocket::http::ContentType::XML, xml)
+}
+
+/// GET /robots.txt — crawler directives with sitemap reference
+#[get("/robots.txt")]
+pub fn robots_txt() -> (rocket::http::ContentType, String) {
+    let base = base_url();
+    let mut txt = String::from("User-agent: *\nAllow: /\n\n");
+    if !base.is_empty() {
+        txt.push_str(&format!("Sitemap: {}/sitemap.xml\n", base));
+    }
+    (rocket::http::ContentType::Plain, txt)
+}
+
 /// SPA catch-all: serves index.html for non-API, non-static paths.
 /// Injects Open Graph meta tags for known SPA routes (blog posts, blogs).
 #[get("/<path..>", rank = 25)]

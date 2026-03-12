@@ -3648,3 +3648,128 @@ fn test_spa_fallback_blog_og_url_uses_base_url_env() {
 
     std::env::remove_var("BASE_URL");
 }
+
+// ─── Sitemap & Robots.txt Tests ───
+
+#[test]
+fn test_robots_txt_returns_valid_content() {
+    std::env::remove_var("BASE_URL");
+    let client = test_client();
+    let resp = client.get("/robots.txt").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    assert!(body.contains("User-agent: *"), "robots.txt should contain User-agent");
+    assert!(body.contains("Allow: /"), "robots.txt should allow all paths");
+}
+
+#[test]
+fn test_robots_txt_includes_sitemap_with_base_url() {
+    std::env::set_var("BASE_URL", "https://blog.example.com");
+    let client = test_client();
+    let resp = client.get("/robots.txt").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    assert!(body.contains("Sitemap: https://blog.example.com/sitemap.xml"),
+        "robots.txt should reference sitemap when BASE_URL is set");
+    std::env::remove_var("BASE_URL");
+}
+
+#[test]
+fn test_sitemap_xml_empty_database() {
+    std::env::remove_var("BASE_URL");
+    let client = test_client();
+    let resp = client.get("/sitemap.xml").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    assert!(body.contains("<?xml version=\"1.0\""), "sitemap should be valid XML");
+    assert!(body.contains("<urlset"), "sitemap should have urlset element");
+    assert!(body.contains("</urlset>"), "sitemap should close urlset");
+    // No blogs, no URLs (home only appears when BASE_URL is set)
+    assert!(!body.contains("<loc>"), "empty db without BASE_URL should have no loc entries");
+}
+
+#[test]
+fn test_sitemap_xml_with_public_blog_and_posts() {
+    std::env::set_var("BASE_URL", "https://blog.example.com");
+    let client = test_client();
+
+    // Create a public blog
+    let (blog_id, key) = create_blog_helper(&client, "Sitemap Test Blog");
+    client.patch(format!("/api/v1/blogs/{}?key={}", blog_id, key))
+        .header(ContentType::JSON)
+        .body(r#"{"is_public": true}"#)
+        .dispatch();
+
+    // Create a published post
+    client.post(format!("/api/v1/blogs/{}/posts?key={}", blog_id, key))
+        .header(ContentType::JSON)
+        .body(r#"{"title": "Sitemap Post", "content": "Hello", "status": "published"}"#)
+        .dispatch();
+
+    let resp = client.get("/sitemap.xml").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+
+    // Should have home page
+    assert!(body.contains("<loc>https://blog.example.com/</loc>"), "sitemap should include home page");
+    // Should have blog page
+    assert!(body.contains(&format!("<loc>https://blog.example.com/blog/{}</loc>", blog_id)),
+        "sitemap should include blog page");
+    // Should have post page
+    assert!(body.contains(&format!("<loc>https://blog.example.com/blog/{}/post/sitemap-post</loc>", blog_id)),
+        "sitemap should include post page");
+    // Should have lastmod dates
+    assert!(body.contains("<lastmod>"), "sitemap should include lastmod dates");
+    // Should have priority
+    assert!(body.contains("<priority>0.6</priority>"), "posts should have 0.6 priority");
+
+    std::env::remove_var("BASE_URL");
+}
+
+#[test]
+fn test_sitemap_excludes_private_blogs() {
+    std::env::set_var("BASE_URL", "https://blog.example.com");
+    let client = test_client();
+
+    // Create a private blog (default)
+    let (blog_id, key) = create_blog_helper(&client, "Private Blog");
+    client.post(format!("/api/v1/blogs/{}/posts?key={}", blog_id, key))
+        .header(ContentType::JSON)
+        .body(r#"{"title": "Secret Post", "content": "Hidden", "status": "published"}"#)
+        .dispatch();
+
+    let resp = client.get("/sitemap.xml").dispatch();
+    let body = resp.into_string().unwrap();
+
+    // Private blog should NOT appear
+    assert!(!body.contains(&blog_id), "private blogs should not appear in sitemap");
+
+    std::env::remove_var("BASE_URL");
+}
+
+#[test]
+fn test_sitemap_excludes_draft_posts() {
+    std::env::set_var("BASE_URL", "https://blog.example.com");
+    let client = test_client();
+
+    let (blog_id, key) = create_blog_helper(&client, "Draft Test Blog");
+    client.patch(format!("/api/v1/blogs/{}?key={}", blog_id, key))
+        .header(ContentType::JSON)
+        .body(r#"{"is_public": true}"#)
+        .dispatch();
+
+    // Create a draft post
+    client.post(format!("/api/v1/blogs/{}/posts?key={}", blog_id, key))
+        .header(ContentType::JSON)
+        .body(r#"{"title": "Draft Post", "content": "WIP"}"#)
+        .dispatch();
+
+    let resp = client.get("/sitemap.xml").dispatch();
+    let body = resp.into_string().unwrap();
+
+    // Blog should appear (it's public), but draft post should not
+    assert!(body.contains(&format!("/blog/{}", blog_id)), "public blog should appear");
+    assert!(!body.contains("draft-post"), "draft posts should not appear in sitemap");
+
+    std::env::remove_var("BASE_URL");
+}
