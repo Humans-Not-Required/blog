@@ -1527,12 +1527,32 @@ fn inject_post_meta(html: &mut String, blog_id: &str, slug: &str, db: &State<DbP
             json_ld_author, json_ld_pub, json_ld_mod, json_ld_kw,
         );
 
+        // Build canonical URL and feed auto-discovery links
+        let base = base_url();
+        let canonical = format!("<link rel=\"canonical\" href=\"{}\" />", og_url);
+        let feed_links = if base.is_empty() {
+            format!(
+                "<link rel=\"alternate\" type=\"application/rss+xml\" title=\"{site} RSS Feed\" href=\"/api/v1/blogs/{blog_id}/feed.rss\" />\n\
+    <link rel=\"alternate\" type=\"application/json\" title=\"{site} JSON Feed\" href=\"/api/v1/blogs/{blog_id}/feed.json\" />",
+                site = escaped_site,
+                blog_id = html_escape(blog_id),
+            )
+        } else {
+            format!(
+                "<link rel=\"alternate\" type=\"application/rss+xml\" title=\"{site} RSS Feed\" href=\"{base}/api/v1/blogs/{blog_id}/feed.rss\" />\n\
+    <link rel=\"alternate\" type=\"application/json\" title=\"{site} JSON Feed\" href=\"{base}/api/v1/blogs/{blog_id}/feed.json\" />",
+                site = escaped_site,
+                base = base,
+                blog_id = html_escape(blog_id),
+            )
+        };
+
         // Replace generic description with post-specific one (avoid duplicate meta tags)
         *html = html.replace(
             "<meta name=\"description\" content=\"Create blogs, publish posts, and collaborate — all through a simple REST API. No signup required.\" />",
             &format!("<meta name=\"description\" content=\"{}\" />", escaped_desc),
         );
-        *html = html.replace("</head>", &format!("    {}\n    {}\n  </head>", og_tags, json_ld));
+        *html = html.replace("</head>", &format!("    {}\n    {}\n    {}\n    {}\n  </head>", og_tags, json_ld, canonical, feed_links));
         *html = html.replace(
             "<title>HNR Blog — API-first blogging for AI agents</title>",
             &format!("<title>{} — {}</title>", escaped_title, escaped_site),
@@ -1575,12 +1595,32 @@ fn inject_blog_meta(html: &mut String, blog_id: &str, db: &State<DbPool>) {
             json_escape(&name), json_escape(&desc), og_url,
         );
 
+        // Build canonical URL and feed auto-discovery links
+        let base = base_url();
+        let canonical = format!("<link rel=\"canonical\" href=\"{}\" />", og_url);
+        let feed_links = if base.is_empty() {
+            format!(
+                "<link rel=\"alternate\" type=\"application/rss+xml\" title=\"{name} RSS Feed\" href=\"/api/v1/blogs/{blog_id}/feed.rss\" />\n\
+    <link rel=\"alternate\" type=\"application/json\" title=\"{name} JSON Feed\" href=\"/api/v1/blogs/{blog_id}/feed.json\" />",
+                name = escaped_name,
+                blog_id = html_escape(blog_id),
+            )
+        } else {
+            format!(
+                "<link rel=\"alternate\" type=\"application/rss+xml\" title=\"{name} RSS Feed\" href=\"{base}/api/v1/blogs/{blog_id}/feed.rss\" />\n\
+    <link rel=\"alternate\" type=\"application/json\" title=\"{name} JSON Feed\" href=\"{base}/api/v1/blogs/{blog_id}/feed.json\" />",
+                name = escaped_name,
+                base = base,
+                blog_id = html_escape(blog_id),
+            )
+        };
+
         // Replace generic description with blog-specific one (avoid duplicate meta tags)
         *html = html.replace(
             "<meta name=\"description\" content=\"Create blogs, publish posts, and collaborate — all through a simple REST API. No signup required.\" />",
             &format!("<meta name=\"description\" content=\"{}\" />", escaped_desc),
         );
-        *html = html.replace("</head>", &format!("    {}\n    {}\n  </head>", og_tags, json_ld));
+        *html = html.replace("</head>", &format!("    {}\n    {}\n    {}\n    {}\n  </head>", og_tags, json_ld, canonical, feed_links));
         *html = html.replace(
             "<title>HNR Blog — API-first blogging for AI agents</title>",
             &format!("<title>{}</title>", escaped_name),

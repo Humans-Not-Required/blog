@@ -3854,3 +3854,120 @@ fn test_spa_fallback_draft_post_no_json_ld() {
     // Draft posts should not have BlogPosting JSON-LD
     assert!(!body.contains(r#""@type":"BlogPosting""#), "draft should not have BlogPosting JSON-LD");
 }
+
+#[test]
+fn test_spa_fallback_post_has_canonical_url() {
+    let (client, _tmp) = test_client_with_static();
+    let (blog_id, key) = create_blog_helper(&client, "Canonical Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Canonical Test", "content": "Testing canonical URLs", "status": "published"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let slug = post["slug"].as_str().unwrap();
+
+    let resp = client.get(format!("/blog/{}/post/{}", blog_id, slug)).dispatch();
+    let body = resp.into_string().unwrap();
+
+    let expected = format!(r#"<link rel="canonical" href="/blog/{}/post/{}" />"#, blog_id, slug);
+    assert!(body.contains(&expected), "canonical URL missing from post page. Body: {}", &body[..500.min(body.len())]);
+}
+
+#[test]
+fn test_spa_fallback_blog_has_canonical_url() {
+    let (client, _tmp) = test_client_with_static();
+    let (blog_id, _key) = create_blog_helper(&client, "Canonical Blog List");
+
+    let resp = client.get(format!("/blog/{}", blog_id)).dispatch();
+    let body = resp.into_string().unwrap();
+
+    let expected = format!(r#"<link rel="canonical" href="/blog/{}" />"#, blog_id);
+    assert!(body.contains(&expected), "canonical URL missing from blog page. Body: {}", &body[..500.min(body.len())]);
+}
+
+#[test]
+fn test_spa_fallback_post_has_feed_discovery() {
+    let (client, _tmp) = test_client_with_static();
+    let (blog_id, key) = create_blog_helper(&client, "Feed Discovery Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Feed Test", "content": "Testing feed discovery", "status": "published"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let slug = post["slug"].as_str().unwrap();
+
+    let resp = client.get(format!("/blog/{}/post/{}", blog_id, slug)).dispatch();
+    let body = resp.into_string().unwrap();
+
+    let rss_expected = format!(r#"<link rel="alternate" type="application/rss+xml" title="Feed Discovery Blog RSS Feed" href="/api/v1/blogs/{}/feed.rss" />"#, blog_id);
+    let json_expected = format!(r#"<link rel="alternate" type="application/json" title="Feed Discovery Blog JSON Feed" href="/api/v1/blogs/{}/feed.json" />"#, blog_id);
+    assert!(body.contains(&rss_expected), "RSS feed discovery link missing from post page");
+    assert!(body.contains(&json_expected), "JSON feed discovery link missing from post page");
+}
+
+#[test]
+fn test_spa_fallback_blog_has_feed_discovery() {
+    let (client, _tmp) = test_client_with_static();
+    let (blog_id, _key) = create_blog_helper(&client, "Blog Feed Discovery");
+
+    let resp = client.get(format!("/blog/{}", blog_id)).dispatch();
+    let body = resp.into_string().unwrap();
+
+    let rss_expected = format!(r#"<link rel="alternate" type="application/rss+xml" title="Blog Feed Discovery RSS Feed" href="/api/v1/blogs/{}/feed.rss" />"#, blog_id);
+    let json_expected = format!(r#"<link rel="alternate" type="application/json" title="Blog Feed Discovery JSON Feed" href="/api/v1/blogs/{}/feed.json" />"#, blog_id);
+    assert!(body.contains(&rss_expected), "RSS feed discovery link missing from blog page");
+    assert!(body.contains(&json_expected), "JSON feed discovery link missing from blog page");
+}
+
+#[test]
+fn test_spa_fallback_draft_post_no_canonical_or_feeds() {
+    let (client, _tmp) = test_client_with_static();
+    let (blog_id, key) = create_blog_helper(&client, "Draft Canonical Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Draft Canonical", "content": "This is a draft", "status": "draft"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+
+    let resp = client.get(format!("/blog/{}/post/draft-canonical", blog_id)).dispatch();
+    let body = resp.into_string().unwrap();
+
+    // Draft posts should not have canonical or feed discovery (since no OG tags injected)
+    assert!(!body.contains(r#"rel="canonical""#), "draft should not have canonical URL");
+    assert!(!body.contains(r#"type="application/rss+xml""#), "draft should not have RSS feed link");
+}
+
+#[test]
+fn test_spa_fallback_post_canonical_uses_base_url() {
+    let (client, _tmp) = test_client_with_static();
+    std::env::set_var("BASE_URL", "https://blog.example.com");
+    let (blog_id, key) = create_blog_helper(&client, "Base URL Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Base URL Test", "content": "Testing base URL", "status": "published"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let slug = post["slug"].as_str().unwrap();
+
+    let resp = client.get(format!("/blog/{}/post/{}", blog_id, slug)).dispatch();
+    let body = resp.into_string().unwrap();
+
+    let expected_canonical = format!(r#"<link rel="canonical" href="https://blog.example.com/blog/{}/post/{}" />"#, blog_id, slug);
+    assert!(body.contains(&expected_canonical), "canonical should use BASE_URL");
+
+    let expected_rss = format!(r#"href="https://blog.example.com/api/v1/blogs/{}/feed.rss""#, blog_id);
+    assert!(body.contains(&expected_rss), "RSS feed link should use BASE_URL");
+
+    std::env::remove_var("BASE_URL");
+}
