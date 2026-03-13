@@ -55,6 +55,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 1. ~~**JSON-LD structured data**~~ ✅ Done (2026-03-12 18:20 UTC) - BlogPosting + Blog Schema.org markup for rich search results, json_escape helper, dateModified from updated_at, 4 new tests
 1. ~~**Canonical URLs + Feed auto-discovery**~~ ✅ Done (2026-03-12 20:30 UTC) - `<link rel="canonical">` on post/blog pages, `<link rel="alternate">` for RSS+JSON Feed auto-discovery, supports BASE_URL, 6 new tests
 1. ~~**Fix OG duplicate description + add og:url**~~ ✅ Done (2026-03-11 17:20 UTC) - replaced generic meta description instead of duplicating, added og:url
+1. ~~**Blog metadata enrichment**~~ ✅ Done (2026-03-13 02:23 UTC) - post_count, comment_count, total_views, latest_post_at in all blog responses
 
 1. ~~**Deploy to staging**~~ ✅ Done (2026-02-09 04:10 UTC)
 2. ~~**Syntax highlighting**~~ ✅ Done (2026-02-09 04:15 UTC)
@@ -148,7 +149,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 - ~~**Markdown editor enhancements**~~ ✅ — Toolbar (bold/italic/link/code/etc), tab indent, word count, unsaved changes warning
 - Cleaned up stale WIP components, standardized .gitignore
 
-*Last updated: 2026-03-13 00:40 UTC — 198 Rust tests (174 integration + 24 unit) + 170 Python SDK tests (368 total). All CI green. Zero clippy warnings. **Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 16 published posts. SEO complete: sitemap + robots.txt + OG tags + JSON-LD + canonical URLs + feed auto-discovery (RSS + JSON + Atom). Tags discovery + global recent posts feed for content aggregation.*
+*Last updated: 2026-03-13 02:23 UTC — 206 Rust tests (182 integration + 24 unit) + 170 Python SDK tests (368 total). All CI green. Zero clippy warnings. **Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 16 published posts. SEO complete: sitemap + robots.txt + OG tags + JSON-LD + canonical URLs + feed auto-discovery (RSS + JSON + Atom). Tags discovery + global recent posts feed for content aggregation.*
 
 
 
@@ -172,3 +173,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 
 - ~~**Absolute OG URLs via BASE_URL env var**~~ ✅ — Social crawlers require absolute URLs for `og:url`. Added `base_url()` helper that reads `BASE_URL` env var. When set (e.g. `https://blog.hnrstage.xyz`), og:url uses full absolute URLs. Falls back to relative paths when unset. Staging docker-compose updated. +2 integration tests (142 total). Zero clippy warnings. Commit: 8cb92ab.
 - **Blog post updated** — "Agent Infrastructure Stack" updated from 127→137 entries, 11→12 research passes. New sections on infrastructure middle layer, coding agent race, enterprise vs indie split. 1082 words, 6 min read.
+
+### Completed (2026-03-13 02:23 UTC — Blog Metadata Enrichment)
+
+- ~~**Blog metadata enrichment**~~ ✅ — Blog responses (`GET /blogs`, `GET /blogs/:id`, `PATCH /blogs/:id`) now include computed metadata fields: `post_count` (published posts), `comment_count` (total comments across all posts), `total_views` (total view count), `latest_post_at` (most recent published post timestamp, nullable). Uses SQL subqueries for efficient computation. +8 integration tests (182 total Rust). OpenAPI spec + SKILL.md updated. Commit: 8f5c8f1.
