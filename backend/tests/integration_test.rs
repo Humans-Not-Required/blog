@@ -5353,3 +5353,240 @@ fn test_update_scheduled_time() {
     let body: serde_json::Value = resp.into_json().unwrap();
     assert_eq!(body["scheduled_at"], new_time);
 }
+
+// ─── Markdown Import Tests ───
+
+#[test]
+fn test_import_markdown_basic() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Import Test");
+
+    let markdown = r#"---
+title: My Imported Post
+tags: [rust, blog]
+summary: A test import
+author_name: TestBot
+---
+# Hello World
+
+This is the body of the imported post."#;
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/import/markdown", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(serde_json::json!({"markdown": markdown}).to_string())
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["post"]["title"], "My Imported Post");
+    assert_eq!(body["post"]["slug"], "my-imported-post");
+    assert_eq!(body["post"]["summary"], "A test import");
+    assert_eq!(body["post"]["author_name"], "TestBot");
+    assert_eq!(body["post"]["status"], "draft");
+    assert!(body["post"]["content"].as_str().unwrap().contains("Hello World"));
+    let tags: Vec<String> = body["post"]["tags"].as_array().unwrap()
+        .iter().map(|v| v.as_str().unwrap().to_string()).collect();
+    assert!(tags.contains(&"rust".to_string()));
+    assert!(tags.contains(&"blog".to_string()));
+    // frontmatter_fields should list found keys
+    let ff = body["frontmatter_fields"].as_array().unwrap();
+    assert!(ff.len() >= 4); // title, tags, summary, author_name at minimum
+}
+
+#[test]
+fn test_import_markdown_published() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Import Published");
+
+    let markdown = "---\ntitle: Published Post\nstatus: published\n---\nContent here.";
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/import/markdown", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(serde_json::json!({"markdown": markdown}).to_string())
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["post"]["status"], "published");
+    assert!(body["post"]["published_at"].as_str().is_some());
+}
+
+#[test]
+fn test_import_markdown_custom_slug() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Import Slug");
+
+    let markdown = "---\ntitle: My Post\nslug: custom-slug-here\n---\nBody.";
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/import/markdown", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(serde_json::json!({"markdown": markdown}).to_string())
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["post"]["slug"], "custom-slug-here");
+}
+
+#[test]
+fn test_import_markdown_no_frontmatter() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Import No FM");
+
+    let markdown = "# Just a heading\n\nNo frontmatter here.";
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/import/markdown", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(serde_json::json!({"markdown": markdown}).to_string())
+        .dispatch();
+    assert_eq!(resp.status(), Status::UnprocessableEntity);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["code"], "INVALID_FRONTMATTER");
+}
+
+#[test]
+fn test_import_markdown_no_title() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Import No Title");
+
+    let markdown = "---\nslug: no-title\ntags: [test]\n---\nBody without title.";
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/import/markdown", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(serde_json::json!({"markdown": markdown}).to_string())
+        .dispatch();
+    assert_eq!(resp.status(), Status::UnprocessableEntity);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["code"], "VALIDATION_ERROR");
+}
+
+#[test]
+fn test_import_markdown_requires_auth() {
+    let client = test_client();
+    let (blog_id, _key) = create_blog_helper(&client, "Import Auth");
+
+    let markdown = "---\ntitle: Secret\n---\nBody.";
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/import/markdown", blog_id))
+        .header(ContentType::JSON)
+        .body(serde_json::json!({"markdown": markdown}).to_string())
+        .dispatch();
+    // Without auth, should fail (Rocket returns 422 for missing guard or 401)
+    assert!(resp.status() == Status::Unauthorized || resp.status() == Status::UnprocessableEntity);
+}
+
+#[test]
+fn test_import_markdown_slug_conflict() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Import Conflict");
+
+    let markdown = "---\ntitle: First Post\nslug: same-slug\n---\nFirst body.";
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/import/markdown", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(serde_json::json!({"markdown": markdown}).to_string())
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+
+    // Try to import again with same slug
+    let markdown2 = "---\ntitle: Second Post\nslug: same-slug\n---\nSecond body.";
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/import/markdown", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(serde_json::json!({"markdown": markdown2}).to_string())
+        .dispatch();
+    assert_eq!(resp.status(), Status::Conflict);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["code"], "SLUG_CONFLICT");
+}
+
+#[test]
+fn test_import_markdown_scheduled() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Import Scheduled");
+
+    let markdown = "---\ntitle: Scheduled Import\nstatus: scheduled\nscheduled_at: 2099-01-01T12:00:00+00:00\n---\nFuture content.";
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/import/markdown", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(serde_json::json!({"markdown": markdown}).to_string())
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["post"]["status"], "scheduled");
+    assert_eq!(body["post"]["scheduled_at"], "2099-01-01T12:00:00+00:00");
+}
+
+#[test]
+fn test_import_markdown_scheduled_without_datetime() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Import Sched No DT");
+
+    let markdown = "---\ntitle: Bad Schedule\nstatus: scheduled\n---\nMissing scheduled_at.";
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/import/markdown", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(serde_json::json!({"markdown": markdown}).to_string())
+        .dispatch();
+    assert_eq!(resp.status(), Status::UnprocessableEntity);
+}
+
+#[test]
+fn test_import_markdown_with_published_at() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Import PubAt");
+
+    let markdown = "---\ntitle: Old Post\nstatus: published\npublished_at: 2020-01-15T10:00:00+00:00\n---\nHistorical content.";
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/import/markdown", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(serde_json::json!({"markdown": markdown}).to_string())
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["post"]["published_at"], "2020-01-15T10:00:00+00:00");
+}
+
+#[test]
+fn test_import_markdown_author_alias() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Import Author Alias");
+
+    // Use "author" instead of "author_name" — common in Jekyll/Hugo
+    let markdown = "---\ntitle: Author Test\nauthor: Hugo Bot\n---\nBody.";
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/import/markdown", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(serde_json::json!({"markdown": markdown}).to_string())
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["post"]["author_name"], "Hugo Bot");
+}
+
+#[test]
+fn test_import_markdown_renders_html() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Import HTML");
+
+    let markdown = "---\ntitle: HTML Test\n---\n# Heading\n\n**Bold** and *italic*.";
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/import/markdown", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(serde_json::json!({"markdown": markdown}).to_string())
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let html = body["post"]["content_html"].as_str().unwrap();
+    assert!(html.contains("<h1>Heading</h1>"));
+    assert!(html.contains("<strong>Bold</strong>"));
+    assert!(html.contains("<em>italic</em>"));
+}

@@ -97,6 +97,60 @@ pub struct CommentResponse {
     pub created_at: String,
 }
 
+// ─── Frontmatter parser ───
+
+/// Parse YAML-like frontmatter from markdown text.
+/// Expects `---\n...\n---\n` header. Returns (fields, body).
+fn parse_frontmatter(text: &str) -> Option<(std::collections::HashMap<String, String>, String)> {
+    let trimmed = text.trim_start();
+    if !trimmed.starts_with("---") {
+        return None;
+    }
+    // Find content after first ---
+    let after_first = &trimmed[3..];
+    let after_first = after_first.trim_start_matches(['\r', '\n']);
+    let end = after_first.find("\n---")?;
+    let frontmatter_block = &after_first[..end];
+    let body_start = end + 4; // skip \n---
+    let body = if body_start < after_first.len() {
+        after_first[body_start..].trim_start_matches(['\r', '\n'])
+    } else {
+        ""
+    };
+
+    let mut fields = std::collections::HashMap::new();
+    for line in frontmatter_block.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some(colon_pos) = line.find(':') {
+            let key = line[..colon_pos].trim().to_string();
+            let value = line[colon_pos + 1..].trim().to_string();
+            if !key.is_empty() {
+                fields.insert(key, value);
+            }
+        }
+    }
+    Some((fields, body.to_string()))
+}
+
+/// Parse a frontmatter value as a list of tags.
+/// Supports: `[a, b, c]` inline arrays and bare comma-separated values.
+fn parse_tags_value(val: &str) -> Vec<String> {
+    let val = val.trim();
+    let inner = if val.starts_with('[') && val.ends_with(']') {
+        &val[1..val.len() - 1]
+    } else {
+        val
+    };
+    inner
+        .split(',')
+        .map(|s| s.trim().trim_matches('"').trim_matches('\'').to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
 // ─── Request bodies ───
 
 #[derive(Deserialize)]
@@ -469,6 +523,127 @@ pub fn create_post(blog_id: &str, req: Json<CreatePostReq>, token: BlogToken, db
 
 
 }
+
+// ─── Markdown Import ───
+
+#[derive(Deserialize)]
+pub struct ImportMarkdownReq {
+    pub markdown: String,
+}
+
+#[derive(Serialize)]
+pub struct ImportResult {
+    pub post: PostResponse,
+    pub frontmatter_fields: Vec<String>,
+}
+
+/// Import a post from markdown with YAML-like frontmatter.
+///
+/// Accepts JSON: `{"markdown": "---\ntitle: ...\n---\nBody content"}`
+///
+/// Supported frontmatter fields: title, slug, tags, status, summary,
+/// author_name, published_at, scheduled_at.
+/// Body after the closing `---` becomes the post content.
+#[post("/blogs/<blog_id>/posts/import/markdown", format = "json", data = "<req>")]
+pub fn import_markdown_post(
+    blog_id: &str,
+    req: Json<ImportMarkdownReq>,
+    token: BlogToken,
+    db: &State<DbPool>,
+    sem: &State<SemanticIndex>,
+) -> Result<(Status, Json<ImportResult>), (Status, Json<ApiError>)> {
+    let conn = db.conn();
+    verify_blog_key(&conn, blog_id, &token)?;
+
+    let markdown = &req.markdown;
+    let (fields, body) = parse_frontmatter(markdown)
+        .ok_or_else(|| err(Status::UnprocessableEntity,
+            "Invalid or missing frontmatter. Expected ---\nkey: value\n---\ncontent",
+            "INVALID_FRONTMATTER"))?;
+
+    let title = fields.get("title")
+        .ok_or_else(|| err(Status::UnprocessableEntity, "Frontmatter must include 'title'", "VALIDATION_ERROR"))?;
+    let title = title.trim();
+    if title.is_empty() {
+        return Err(err(Status::UnprocessableEntity, "Title cannot be empty", "VALIDATION_ERROR"));
+    }
+
+    let slug = fields.get("slug")
+        .map(|s| slugify(s))
+        .unwrap_or_else(|| slugify(title));
+    let summary = fields.get("summary").cloned().unwrap_or_default();
+    let author_name = fields.get("author_name")
+        .or_else(|| fields.get("author"))
+        .cloned()
+        .unwrap_or_default();
+    let status = fields.get("status").map(|s| s.as_str()).unwrap_or("draft");
+    let tags = fields.get("tags")
+        .map(|t| parse_tags_value(t))
+        .unwrap_or_default();
+
+    if status == "scheduled" && !fields.contains_key("scheduled_at") {
+        return Err(err(Status::UnprocessableEntity,
+            "scheduled_at is required when status is 'scheduled'",
+            "VALIDATION_ERROR"));
+    }
+
+    let scheduled_at = if let Some(sat) = fields.get("scheduled_at") {
+        if chrono::DateTime::parse_from_rfc3339(sat).is_err() {
+            return Err(err(Status::UnprocessableEntity,
+                "scheduled_at must be a valid ISO-8601 datetime",
+                "VALIDATION_ERROR"));
+        }
+        Some(sat.clone())
+    } else {
+        None
+    };
+
+    let published_at: Option<String> = if let Some(pa) = fields.get("published_at") {
+        Some(pa.clone())
+    } else if status == "published" {
+        Some(chrono::Utc::now().to_rfc3339())
+    } else {
+        None
+    };
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let content_html = render_markdown(&body);
+    let tags_json = serde_json::to_string(&tags).unwrap_or_else(|_| "[]".to_string());
+
+    conn.execute(
+        "INSERT INTO posts (id, blog_id, title, slug, content, content_html, summary, tags, status, published_at, author_name, scheduled_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        rusqlite::params![id, blog_id, title, slug, body, content_html, summary, tags_json, status, published_at, author_name, scheduled_at],
+    ).map_err(|e| {
+        if e.to_string().contains("UNIQUE") {
+            err(Status::Conflict, "A post with this slug already exists", "SLUG_CONFLICT")
+        } else {
+            db_err(&e.to_string())
+        }
+    })?;
+
+    // Update FTS + semantic index
+    crate::db::upsert_fts(&conn, &id);
+    crate::db::upsert_semantic(&conn, &id, sem);
+
+    let post = query_post(&conn, &id)?;
+    let found_fields: Vec<String> = fields.keys().cloned().collect();
+    drop(conn);
+
+    // Fire webhooks if published
+    if status == "published" {
+        webhooks::fire_webhooks(db.inner(), blog_id, "post.published", serde_json::json!({
+            "post_id": post.id,
+            "title": post.title,
+            "slug": post.slug,
+            "author_name": post.author_name,
+            "summary": post.summary,
+            "imported": true
+        }));
+    }
+
+    Ok((Status::Created, Json(ImportResult { post, frontmatter_fields: found_fields })))
+}
+
 
 fn query_post(conn: &rusqlite::Connection, post_id: &str) -> Result<PostResponse, (Status, Json<ApiError>)> {
     conn.query_row(

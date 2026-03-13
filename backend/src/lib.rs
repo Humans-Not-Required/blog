@@ -58,6 +58,7 @@ pub fn create_rocket(conn: rusqlite::Connection) -> rocket::Rocket<rocket::Build
             routes::delete_blog,
             routes::rotate_key,
             routes::create_post,
+            routes::import_markdown_post,
             routes::list_posts,
             routes::get_post_by_slug,
             routes::update_post,

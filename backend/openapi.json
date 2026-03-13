@@ -1493,6 +1493,81 @@
           }
         }
       }
+    },
+    "/blogs/{blogId}/posts/import/markdown": {
+      "post": {
+        "tags": [
+          "Posts"
+        ],
+        "summary": "Import post from markdown with frontmatter",
+        "description": "Create a post by importing markdown text with YAML-like frontmatter. Supported frontmatter fields: title (required), slug, tags, status, summary, author_name (or author), published_at, scheduled_at. Body after the closing --- becomes post content.",
+        "operationId": "importMarkdownPost",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/blogId"
+          }
+        ],
+        "security": [
+          {
+            "manageKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "markdown"
+                ],
+                "properties": {
+                  "markdown": {
+                    "type": "string",
+                    "description": "Markdown text with YAML-like frontmatter (---\\nkey: value\\n---\\ncontent)"
+                  }
+                }
+              },
+              "example": {
+                "markdown": "---\\ntitle: My Post\\ntags: [rust, blog]\\nstatus: draft\\nsummary: A quick post\\nauthor_name: Agent\\n---\\n# Hello World\\n\\nThis is the body."
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Post created from imported markdown",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "post": {
+                      "$ref": "#/components/schemas/Post"
+                    },
+                    "frontmatter_fields": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "List of frontmatter field names that were found and applied"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid manage key"
+          },
+          "409": {
+            "description": "Slug conflict \u2014 a post with this slug already exists"
+          },
+          "422": {
+            "description": "Invalid frontmatter, missing title, or validation error"
+          }
+        }
+      }
     }
   },
   "components": {

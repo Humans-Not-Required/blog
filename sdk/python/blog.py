@@ -509,6 +509,33 @@ class Blog:
         return self._request("GET", f"/api/v1/blogs/{blog_id}/posts/{slug}/export/nostr")
 
 
+
+    # ------------------------------------------------------------------
+    # Markdown Import
+    # ------------------------------------------------------------------
+
+    def import_markdown(
+        self,
+        blog_id: str,
+        markdown: str,
+        *,
+        manage_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """``POST /api/v1/blogs/{id}/posts/import/markdown`` — Import post from markdown with frontmatter.
+
+        The *markdown* string should contain YAML-like frontmatter between ``---``
+        delimiters, followed by the post body.  Supported frontmatter fields:
+        ``title`` (required), ``slug``, ``tags``, ``status``, ``summary``,
+        ``author_name`` (or ``author``), ``published_at``, ``scheduled_at``.
+        """
+        headers = self._auth_header(manage_key)
+        return self._request(
+            "POST",
+            f"/api/v1/blogs/{blog_id}/posts/import/markdown",
+            json={"markdown": markdown},
+            headers=headers,
+        )
+
     # ------------------------------------------------------------------
     # Webhooks
     # ------------------------------------------------------------------

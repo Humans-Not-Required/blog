@@ -1561,3 +1561,50 @@ class TestPostScheduling(WriteTestCase):
         posts = no_auth_client.list_posts(self.blog_id)
         scheduled_posts = [p for p in posts if p["status"] == "scheduled"]
         self.assertEqual(len(scheduled_posts), 0)
+
+
+# =========================================================================
+# Markdown Import
+# =========================================================================
+
+
+class TestMarkdownImport(WriteTestCase):
+    def test_import_basic(self):
+        md = "---\ntitle: SDK Import Test\ntags: [python, sdk]\nsummary: Testing import\nauthor_name: SDKBot\n---\n# Hello\n\nImported content."
+        result = self.b.import_markdown(self.blog_id, md)
+        self.assertIn("post", result)
+        self.assertIn("frontmatter_fields", result)
+        post = result["post"]
+        self.assertEqual(post["title"], "SDK Import Test")
+        self.assertEqual(post["summary"], "Testing import")
+        self.assertEqual(post["author_name"], "SDKBot")
+        self.assertEqual(post["status"], "draft")
+        self.assertIn("python", post["tags"])
+        self.assertIn("sdk", post["tags"])
+        self.assertIn("Hello", post["content"])
+        self.__class__._post_ids.append(post["id"])
+
+    def test_import_published(self):
+        md = f"---\ntitle: Published Import {ts()}\nstatus: published\n---\nPublished body."
+        result = self.b.import_markdown(self.blog_id, md)
+        self.assertEqual(result["post"]["status"], "published")
+        self.assertIsNotNone(result["post"]["published_at"])
+        self.__class__._post_ids.append(result["post"]["id"])
+
+    def test_import_no_frontmatter_fails(self):
+        md = "# Just a heading\n\nNo frontmatter."
+        with self.assertRaises(ValidationError):
+            self.b.import_markdown(self.blog_id, md)
+
+    def test_import_no_title_fails(self):
+        md = "---\nslug: no-title\n---\nBody without title."
+        with self.assertRaises(ValidationError):
+            self.b.import_markdown(self.blog_id, md)
+
+    def test_import_renders_html(self):
+        md = f"---\ntitle: HTML Render {ts()}\n---\n**Bold** and *italic*."
+        result = self.b.import_markdown(self.blog_id, md)
+        html = result["post"]["content_html"]
+        self.assertIn("<strong>Bold</strong>", html)
+        self.assertIn("<em>italic</em>", html)
+        self.__class__._post_ids.append(result["post"]["id"])

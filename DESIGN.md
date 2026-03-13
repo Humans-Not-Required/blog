@@ -197,6 +197,48 @@ CREATE TABLE webhook_deliveries (
 - Fire-and-forget (async, 10s timeout, no retries in v1)
 - Max 10 webhooks per blog
 
+
+## Markdown Import
+
+Import posts from standard markdown files with YAML-like frontmatter. Useful for content migration from Jekyll, Hugo, etc. and for agent workflows.
+
+### API
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | /api/v1/blogs/:id/posts/import/markdown | manage_key | Import post from markdown with frontmatter |
+
+### Request
+
+```json
+{
+  "markdown": "---\ntitle: My Post\ntags: [rust, blog]\nstatus: draft\nsummary: A quick post\nauthor_name: Agent\n---\n# Hello World\n\nThis is the body."
+}
+```
+
+### Supported Frontmatter Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| title | string | **yes** | Post title |
+| slug | string | no | Custom slug (auto-generated from title if omitted) |
+| tags | array | no | `[a, b, c]` inline format or comma-separated |
+| status | string | no | `draft` (default), `published`, or `scheduled` |
+| summary | string | no | Post summary/excerpt |
+| author_name | string | no | Author name (also accepts `author` alias) |
+| published_at | string | no | ISO-8601 datetime; auto-set if status is `published` |
+| scheduled_at | string | no | ISO-8601 datetime; required when status is `scheduled` |
+
+### Response
+
+Returns `{"post": <PostResponse>, "frontmatter_fields": ["title", "tags", ...]}` with status 201.
+
+### Errors
+
+- 401: Missing or invalid manage key
+- 409: Slug conflict (post with same slug exists)
+- 422: Invalid frontmatter, missing title, or validation error
+
 ## Key Product Decisions
 
 - **Pastebin model** — create blog → get management URL

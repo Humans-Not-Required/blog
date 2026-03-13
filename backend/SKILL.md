@@ -58,6 +58,18 @@ Post body: `{"title": "...", "content": "markdown", "tags": ["..."], "status": "
 
 Pinned posts sort first in listings.
 
+
+## Markdown Import
+
+```
+POST /api/v1/blogs/{id}/posts/import/markdown  — import post from markdown with frontmatter (manage_key)
+  Body: {"markdown": "---\ntitle: My Post\ntags: [a, b]\nstatus: draft\n---\n# Content here"}
+```
+
+Supported frontmatter fields: `title` (required), `slug`, `tags` (e.g. `[a, b]`), `status` (`draft`/`published`/`scheduled`), `summary`, `author_name` (or `author`), `published_at`, `scheduled_at`.
+
+Body after the closing `---` becomes the post content. Returns the created post plus a list of frontmatter fields that were parsed.
+
 ## Comments
 
 ```
