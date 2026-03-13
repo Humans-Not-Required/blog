@@ -232,19 +232,21 @@ pub fn create_blog(req: Json<CreateBlogReq>, client_ip: ClientIp, limiters: &Sta
     })))
 }
 
-#[get("/blogs")]
-pub fn list_blogs(db: &State<DbPool>) -> Result<Json<Vec<BlogResponse>>, (Status, Json<ApiError>)> {
+#[get("/blogs?<limit>&<offset>")]
+pub fn list_blogs(limit: Option<i64>, offset: Option<i64>, db: &State<DbPool>) -> Result<Json<Vec<BlogResponse>>, (Status, Json<ApiError>)> {
     let conn = db.conn();
+    let lim = limit.unwrap_or(50).clamp(1, 100);
+    let off = offset.unwrap_or(0).max(0);
     let mut stmt = conn.prepare(
         "SELECT b.id, b.name, b.description, b.is_public, b.created_at, b.updated_at,
                 (SELECT COUNT(*) FROM posts p WHERE p.blog_id = b.id AND p.status = 'published') as post_count,
                 (SELECT COUNT(*) FROM comments c JOIN posts p ON c.post_id = p.id WHERE p.blog_id = b.id) as comment_count,
                 (SELECT COUNT(*) FROM post_views v JOIN posts p ON v.post_id = p.id WHERE p.blog_id = b.id) as total_views,
                 (SELECT MAX(p.published_at) FROM posts p WHERE p.blog_id = b.id AND p.status = 'published') as latest_post_at
-         FROM blogs b WHERE b.is_public = 1 ORDER BY b.created_at DESC"
+         FROM blogs b WHERE b.is_public = 1 ORDER BY b.created_at DESC LIMIT ?1 OFFSET ?2"
     ).map_err(|e| db_err(&e.to_string()))?;
 
-    let blogs = stmt.query_map([], |row| {
+    let blogs = stmt.query_map(rusqlite::params![lim, off], |row| {
         Ok(BlogResponse {
             id: row.get(0)?,
             name: row.get(1)?,
@@ -680,8 +682,8 @@ pub fn create_comment(blog_id: &str, post_id: &str, req: Json<CreateCommentReq>,
     Ok((Status::Created, Json(comment)))
 }
 
-#[get("/blogs/<blog_id>/posts/<post_id>/comments")]
-pub fn list_comments(blog_id: &str, post_id: &str, db: &State<DbPool>) -> Result<Json<Vec<CommentResponse>>, (Status, Json<ApiError>)> {
+#[get("/blogs/<blog_id>/posts/<post_id>/comments?<limit>&<offset>")]
+pub fn list_comments(blog_id: &str, post_id: &str, limit: Option<i64>, offset: Option<i64>, db: &State<DbPool>) -> Result<Json<Vec<CommentResponse>>, (Status, Json<ApiError>)> {
     let conn = db.conn();
     // Verify post exists
     conn.query_row(
@@ -690,11 +692,14 @@ pub fn list_comments(blog_id: &str, post_id: &str, db: &State<DbPool>) -> Result
         |_| Ok(()),
     ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))?;
 
+    let lim = limit.unwrap_or(100).clamp(1, 500);
+    let off = offset.unwrap_or(0).max(0);
+
     let mut stmt = conn.prepare(
-        "SELECT id, post_id, author_name, content, created_at FROM comments WHERE post_id = ?1 ORDER BY created_at ASC"
+        "SELECT id, post_id, author_name, content, created_at FROM comments WHERE post_id = ?1 ORDER BY created_at ASC LIMIT ?2 OFFSET ?3"
     ).map_err(|e| db_err(&e.to_string()))?;
 
-    let comments = stmt.query_map([post_id], |row| {
+    let comments = stmt.query_map(rusqlite::params![post_id, lim, off], |row| {
         Ok(CommentResponse {
             id: row.get(0)?,
             post_id: row.get(1)?,

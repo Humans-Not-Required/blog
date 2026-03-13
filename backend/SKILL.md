@@ -33,6 +33,7 @@ Save your `manage_key` — it's shown only once.
 ```
 POST   /api/v1/blogs                          — create blog (returns manage_key)
 GET    /api/v1/blogs                          — list public blogs (includes post_count, comment_count, total_views, latest_post_at)
+  ?limit=N&offset=N                            — pagination (default 50, max 100)
 GET    /api/v1/blogs/{id}                     — blog details (includes post_count, comment_count, total_views, latest_post_at)
 PATCH  /api/v1/blogs/{id}                     — update blog (manage_key)
 DELETE /api/v1/blogs/{id}                     — delete blog + all content (manage_key)
@@ -62,6 +63,7 @@ Pinned posts sort first in listings.
 POST /api/v1/blogs/{id}/posts/{post_id}/comments    — add comment (no auth)
   Body: {"author_name": "...", "content": "..."}
 GET  /api/v1/blogs/{id}/posts/{post_id}/comments    — list comments
+  ?limit=N&offset=N                                   — pagination (default 100, max 500)
 DELETE /api/v1/blogs/{id}/posts/{post_id}/comments/{cid} — delete (manage_key)
 ```
 

@@ -4529,3 +4529,134 @@ fn test_blog_metadata_multi_post_multi_comment() {
     assert_eq!(body["post_count"], 3);
     assert_eq!(body["comment_count"], 3);
 }
+
+// ── Comment Pagination ──────────────────────────────────────────────────
+
+#[test]
+fn test_comment_pagination_limit() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "CommentPagBlog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    std::env::set_var("COMMENT_RATE_LIMIT", "100");
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth)
+        .body(r#"{"title": "Paginated Post", "status": "published"}"#)
+        .dispatch();
+    let post_id = resp.into_json::<serde_json::Value>().unwrap()["id"].as_str().unwrap().to_string();
+
+    // Add 10 comments
+    for i in 0..10 {
+        client.post(format!("/api/v1/blogs/{}/posts/{}/comments", blog_id, post_id))
+            .header(ContentType::JSON)
+            .body(format!(r#"{{"author_name": "User{}", "content": "Comment {}"}}"#, i, i))
+            .dispatch();
+    }
+
+    // Default: all 10 returned (default limit=100)
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/comments", blog_id, post_id)).dispatch();
+    let comments: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(comments.len(), 10);
+
+    // Limit to 3
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/comments?limit=3", blog_id, post_id)).dispatch();
+    let comments: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(comments.len(), 3);
+    assert_eq!(comments[0]["content"].as_str().unwrap(), "Comment 0");
+    assert_eq!(comments[2]["content"].as_str().unwrap(), "Comment 2");
+
+    std::env::remove_var("COMMENT_RATE_LIMIT");
+}
+
+#[test]
+fn test_comment_pagination_offset() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "CommentOffsetBlog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    std::env::set_var("COMMENT_RATE_LIMIT", "100");
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth)
+        .body(r#"{"title": "Offset Post", "status": "published"}"#)
+        .dispatch();
+    let post_id = resp.into_json::<serde_json::Value>().unwrap()["id"].as_str().unwrap().to_string();
+
+    for i in 0..5 {
+        client.post(format!("/api/v1/blogs/{}/posts/{}/comments", blog_id, post_id))
+            .header(ContentType::JSON)
+            .body(format!(r#"{{"author_name": "Author{}", "content": "Text {}"}}"#, i, i))
+            .dispatch();
+    }
+
+    // Offset 2, limit 2 → comments 2 and 3
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/comments?limit=2&offset=2", blog_id, post_id)).dispatch();
+    let comments: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(comments.len(), 2);
+    assert_eq!(comments[0]["content"].as_str().unwrap(), "Text 2");
+    assert_eq!(comments[1]["content"].as_str().unwrap(), "Text 3");
+
+    // Offset past end → empty
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/comments?offset=100", blog_id, post_id)).dispatch();
+    let comments: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(comments.len(), 0);
+
+    std::env::remove_var("COMMENT_RATE_LIMIT");
+}
+
+// ── Blog List Pagination ────────────────────────────────────────────────
+
+#[test]
+fn test_blog_list_pagination_limit() {
+    let client = test_client();
+
+    // Create 5 public blogs
+    for i in 0..5 {
+        let (id, key) = create_blog_helper(&client, &format!("PagBlog{}", i));
+        client.patch(format!("/api/v1/blogs/{}", id))
+            .header(ContentType::JSON)
+            .header(Header::new("Authorization", format!("Bearer {}", key)))
+            .body(r#"{"is_public": true}"#)
+            .dispatch();
+    }
+
+    // Limit to 2
+    let resp = client.get("/api/v1/blogs?limit=2").dispatch();
+    let blogs: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(blogs.len(), 2);
+}
+
+#[test]
+fn test_blog_list_pagination_offset() {
+    let client = test_client();
+
+    // Create 4 public blogs with distinct names
+    let mut names = vec![];
+    for i in 0..4 {
+        let name = format!("OffsetBlog{}", i);
+        let (id, key) = create_blog_helper(&client, &name);
+        client.patch(format!("/api/v1/blogs/{}", id))
+            .header(ContentType::JSON)
+            .header(Header::new("Authorization", format!("Bearer {}", key)))
+            .body(r#"{"is_public": true}"#)
+            .dispatch();
+        names.push(name);
+    }
+
+    // Get all
+    let resp = client.get("/api/v1/blogs").dispatch();
+    let all_blogs: Vec<serde_json::Value> = resp.into_json().unwrap();
+    let total = all_blogs.len();
+    assert!(total >= 4);
+
+    // Get with offset=2, limit=2
+    let resp = client.get("/api/v1/blogs?limit=2&offset=2").dispatch();
+    let page: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(page.len(), 2);
+
+    // Verify offset produces different results
+    let resp = client.get("/api/v1/blogs?limit=2&offset=0").dispatch();
+    let first_page: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_ne!(first_page[0]["id"], page[0]["id"]);
+}

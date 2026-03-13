@@ -64,7 +64,7 @@ CREATE TABLE comments (
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | POST | /api/v1/blogs | None | Create blog → returns manage_key |
-| GET | /api/v1/blogs | None | List public blogs |
+| GET | /api/v1/blogs | None | List public blogs (?limit, ?offset) |
 | GET | /api/v1/blogs/:id | None | Get blog details |
 | PATCH | /api/v1/blogs/:id | manage_key | Update blog name/description/public |
 
@@ -81,7 +81,7 @@ CREATE TABLE comments (
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | POST | /api/v1/blogs/:id/posts/:post_id/comments | None | Add comment |
-| GET | /api/v1/blogs/:id/posts/:post_id/comments | None | List comments |
+| GET | /api/v1/blogs/:id/posts/:post_id/comments | None | List comments (?limit, ?offset) |
 
 ### Feeds
 | Method | Path | Auth | Description |
