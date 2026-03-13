@@ -40,6 +40,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 - **Documentation** - Comprehensive README (195 lines), detailed llms.txt (all 27 endpoints)
 - **Docker** - 3-stage multi-stage build
 - **Auth** - Bearer/X-API-Key/?key= (same as kanban)
+  - Manage key rotation (POST /rotate-key, invalidates old key)
 
 ### Tech Stack
 
@@ -149,7 +150,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 - ~~**Markdown editor enhancements**~~ ✅ — Toolbar (bold/italic/link/code/etc), tab indent, word count, unsaved changes warning
 - Cleaned up stale WIP components, standardized .gitignore
 
-*Last updated: 2026-03-13 03:55 UTC — 210 Rust tests (186 integration + 24 unit) + 170 Python SDK tests (372 total). All CI green. Zero clippy warnings. **Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 16 published posts. SEO complete: sitemap + robots.txt + OG tags + JSON-LD + canonical URLs + feed auto-discovery (RSS + JSON + Atom). Tags discovery + global recent posts feed for content aggregation. All list endpoints now support pagination.*
+*Last updated: 2026-03-13 05:30 UTC — 216 Rust tests (192 integration + 24 unit) + 173 Python SDK tests (389 total). All CI green. Zero clippy warnings. **Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 16 published posts. SEO complete: sitemap + robots.txt + OG tags + JSON-LD + canonical URLs + feed auto-discovery (RSS + JSON + Atom). Tags discovery + global recent posts feed for content aggregation. All list endpoints now support pagination. Manage key rotation for security.*
 
 
 
@@ -173,6 +174,10 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 
 - ~~**Absolute OG URLs via BASE_URL env var**~~ ✅ — Social crawlers require absolute URLs for `og:url`. Added `base_url()` helper that reads `BASE_URL` env var. When set (e.g. `https://blog.hnrstage.xyz`), og:url uses full absolute URLs. Falls back to relative paths when unset. Staging docker-compose updated. +2 integration tests (142 total). Zero clippy warnings. Commit: 8cb92ab.
 - **Blog post updated** — "Agent Infrastructure Stack" updated from 127→137 entries, 11→12 research passes. New sections on infrastructure middle layer, coding agent race, enterprise vs indie split. 1082 words, 6 min read.
+
+### Completed (2026-03-13 05:30 UTC — Manage Key Rotation)
+
+- ~~**Manage key rotation**~~ ✅ — `POST /api/v1/blogs/{id}/rotate-key` endpoint. Generates new manage_key, invalidates old key immediately. Same auth model as other write endpoints. Security feature: enables recovery from compromised keys. +6 Rust integration tests (192 total) + 3 Python SDK tests (173 total). OpenAPI spec + SKILL.md + DESIGN.md + Python SDK updated. Zero clippy warnings. Commit: 4ed298c.
 
 ### Completed (2026-03-13 03:55 UTC — List Pagination)
 
