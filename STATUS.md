@@ -14,7 +14,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
   - Comments on published posts
   - Comment moderation: delete comments with manage_key
   - Post pinning: pin/unpin posts, pinned posts sort first
-  - RSS 2.0 and JSON Feed 1.1
+  - RSS 2.0, JSON Feed 1.1, and Atom 1.0
   - /llms.txt for API discovery
   - /api/v1/openapi.json — full OpenAPI 3.0.3 spec
   - JSON error catchers
@@ -148,9 +148,13 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 - ~~**Markdown editor enhancements**~~ ✅ — Toolbar (bold/italic/link/code/etc), tab indent, word count, unsaved changes warning
 - Cleaned up stale WIP components, standardized .gitignore
 
-*Last updated: 2026-03-12 22:25 UTC — 180 Rust tests (168 integration + 12 unit) + 170 Python SDK tests (350 total). All CI green. Zero clippy warnings. **Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 16 published posts. SEO complete: sitemap + robots.txt + OG tags + JSON-LD + canonical URLs + feed auto-discovery. Tags discovery + global recent posts feed for content aggregation.*
+*Last updated: 2026-03-13 00:40 UTC — 198 Rust tests (174 integration + 24 unit) + 170 Python SDK tests (368 total). All CI green. Zero clippy warnings. **Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 16 published posts. SEO complete: sitemap + robots.txt + OG tags + JSON-LD + canonical URLs + feed auto-discovery (RSS + JSON + Atom). Tags discovery + global recent posts feed for content aggregation.*
 
 
+
+### Completed (2026-03-13 00:40 UTC — Atom Feed)
+
+- ~~**Atom 1.0 Feed**~~ ✅ — `GET /api/v1/blogs/{id}/feed.atom` endpoint. Full Atom 1.0 XML with entries, categories, summaries, HTML content, author info, published/updated timestamps. Feed auto-discovery `<link>` tags added to SPA fallback (post + blog pages). BASE_URL support for absolute URLs. +6 integration tests + 2 updated feed discovery tests (198 total Rust tests). OpenAPI spec, SKILL.md, DESIGN.md updated. Commit: ebb5ef1.
 ### Completed (2026-03-12 22:25 UTC — Tags & Recent Posts)
 
 - ~~**Tags Discovery API**~~ ✅ — `GET /api/v1/tags?blog_id=<optional>` returns all tags with post counts. Uses SQLite `json_each()` to explode tag arrays. Global view filters to published posts in public blogs; blog-specific view includes all published tags. Ordered by count descending, then alphabetical. +5 integration tests. Commit: 7e3f289.
