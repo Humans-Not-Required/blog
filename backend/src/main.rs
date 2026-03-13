@@ -44,6 +44,9 @@ fn rocket() -> _ {
         .ok().and_then(|v| v.parse().ok()).unwrap_or(30);
     let blog_limiter = rate_limit::RateLimiter::new(std::time::Duration::from_secs(3600), blog_limit);
     let comment_limiter = rate_limit::RateLimiter::new(std::time::Duration::from_secs(3600), comment_limit);
+    let reaction_limit: u64 = std::env::var("REACTION_RATE_LIMIT")
+        .ok().and_then(|v| v.parse().ok()).unwrap_or(20);
+    let reaction_limiter = rate_limit::RateLimiter::new(std::time::Duration::from_secs(3600), reaction_limit);
 
     // Build semantic search index from published posts
     let sem_index = semantic::SemanticIndex::new();
@@ -55,6 +58,7 @@ fn rocket() -> _ {
         .manage(routes::RateLimiters {
             blog_creation: blog_limiter,
             comment_creation: comment_limiter,
+            reaction_creation: reaction_limiter,
         })
         .attach(cors)
         .attach(scheduler::PostScheduler)
@@ -99,6 +103,8 @@ fn rocket() -> _ {
             routes::delete_webhook_route,
             routes::list_webhook_deliveries,
             routes::publish_scheduled,
+            routes::react_to_post,
+            routes::get_reactions,
         ])
         .mount("/", routes![routes::skill_md, routes::llms_txt, routes::skills_index, routes::skills_skill_md, routes::sitemap_xml, routes::robots_txt])
         .mount("/", rocket::fs::FileServer::from(static_dir).rank(20))

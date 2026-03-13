@@ -13,6 +13,7 @@ pub const VALID_EVENTS: &[&str] = &[
     "post.updated",
     "post.deleted",
     "comment.created",
+    "post.reacted",
 ];
 
 // ─── Models ───

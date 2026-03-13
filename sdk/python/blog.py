@@ -641,5 +641,37 @@ class Blog:
         data = self._request("GET", "/api/v1/skills/SKILL.md")
         return data.decode() if isinstance(data, bytes) else str(data)
 
+
+    # ─── Reactions ───
+
+    def react_to_post(
+        self, blog_id: str, post_id: str, emoji: str
+    ) -> Dict[str, Any]:
+        """``POST /api/v1/blogs/{blog_id}/posts/{post_id}/react``
+
+        Add an emoji reaction to a published post. Allowed emojis:
+        👍 👎 ❤️ 🔥 🎉 🤔 👀 🚀 💡 👏
+
+        Returns updated reaction summary with total and per-emoji counts.
+        Duplicate reactions (same IP + emoji) return 409 Conflict.
+        """
+        return self._request(
+            "POST",
+            f"/api/v1/blogs/{blog_id}/posts/{post_id}/react",
+            json={"emoji": emoji},
+        )
+
+    def get_reactions(
+        self, blog_id: str, post_id: str
+    ) -> Dict[str, Any]:
+        """``GET /api/v1/blogs/{blog_id}/posts/{post_id}/reactions``
+
+        Get aggregated reaction counts for a post.
+        Returns total count and per-emoji breakdown ordered by count descending.
+        """
+        return self._request(
+            "GET", f"/api/v1/blogs/{blog_id}/posts/{post_id}/reactions"
+        )
+
     def __repr__(self) -> str:
         return f"Blog(base_url={self.base_url!r})"

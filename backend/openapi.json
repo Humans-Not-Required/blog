@@ -70,7 +70,7 @@
       },
       "post": {
         "summary": "Create a new blog",
-        "description": "Creates a blog and returns a manage_key. Save the key \u2014 it cannot be retrieved later.",
+        "description": "Creates a blog and returns a manage_key. Save the key — it cannot be retrieved later.",
         "operationId": "createBlog",
         "tags": [
           "blogs"
@@ -1094,7 +1094,7 @@
     "/blogs/{blogId}/rotate-key": {
       "post": {
         "summary": "Rotate manage key",
-        "description": "Generate a new manage key for the blog. The old key is immediately invalidated. Save the new key \u2014 it is shown only once.",
+        "description": "Generate a new manage key for the blog. The old key is immediately invalidated. Save the new key — it is shown only once.",
         "operationId": "rotateKey",
         "tags": [
           "Blogs"
@@ -1561,10 +1561,113 @@
             "description": "Missing or invalid manage key"
           },
           "409": {
-            "description": "Slug conflict \u2014 a post with this slug already exists"
+            "description": "Slug conflict — a post with this slug already exists"
           },
           "422": {
             "description": "Invalid frontmatter, missing title, or validation error"
+          }
+        }
+      }
+    },
+    "/api/v1/blogs/{blog_id}/posts/{post_id}/react": {
+      "post": {
+        "tags": [
+          "reactions"
+        ],
+        "summary": "React to a post",
+        "description": "Add an emoji reaction to a published post. Rate-limited to 20/hr per IP per post. Duplicate reactions (same IP + emoji) are rejected.",
+        "parameters": [
+          {
+            "name": "blog_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReactReq"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Reaction added",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReactionsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Post not found or not published"
+          },
+          "409": {
+            "description": "Already reacted with this emoji from this IP"
+          },
+          "422": {
+            "description": "Invalid emoji"
+          },
+          "429": {
+            "description": "Rate limit exceeded"
+          }
+        }
+      }
+    },
+    "/api/v1/blogs/{blog_id}/posts/{post_id}/reactions": {
+      "get": {
+        "tags": [
+          "reactions"
+        ],
+        "summary": "Get reaction counts for a post",
+        "description": "Returns aggregated emoji reaction counts for a post, ordered by count descending.",
+        "parameters": [
+          {
+            "name": "blog_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reaction counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReactionsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Post not found"
           }
         }
       }
@@ -1679,7 +1782,7 @@
           },
           "manage_key": {
             "type": "string",
-            "description": "Save this key \u2014 it cannot be retrieved later"
+            "description": "Save this key — it cannot be retrieved later"
           },
           "view_url": {
             "type": "string"
@@ -1987,6 +2090,46 @@
           "data": {
             "type": "object",
             "description": "Event-specific data (post_id, title, slug, etc.)"
+          }
+        }
+      },
+      "ReactReq": {
+        "type": "object",
+        "required": [
+          "emoji"
+        ],
+        "properties": {
+          "emoji": {
+            "type": "string",
+            "description": "Emoji reaction. Allowed: 👍 👎 ❤️ 🔥 🎉 🤔 👀 🚀 💡 👏"
+          }
+        }
+      },
+      "ReactionSummary": {
+        "type": "object",
+        "properties": {
+          "emoji": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer"
+          }
+        }
+      },
+      "ReactionsResponse": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "reactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReactionSummary"
+            }
           }
         }
       }

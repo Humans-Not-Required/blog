@@ -98,6 +98,7 @@ pub fn initialize(conn: &Connection) {
     // Rebuild FTS index from existing posts (idempotent — clears and repopulates)
     rebuild_fts_index(conn);
     initialize_webhooks(conn);
+    initialize_reactions(conn);
 }
 
 /// Rebuild the FTS5 index from the posts table. Called on startup.
@@ -253,4 +254,23 @@ pub fn publish_scheduled_posts(conn: &Connection) -> Vec<(String, String)> {
     }
 
     published
+}
+
+// ─── Post Reactions ───
+
+pub fn initialize_reactions(conn: &Connection) {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS post_reactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+            emoji TEXT NOT NULL,
+            client_ip TEXT DEFAULT '',
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_post_reactions_post_id ON post_reactions(post_id);
+        CREATE INDEX IF NOT EXISTS idx_post_reactions_composite ON post_reactions(post_id, emoji);
+        ",
+    )
+    .expect("Failed to initialize reactions table");
 }

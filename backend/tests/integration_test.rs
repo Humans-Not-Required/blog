@@ -5590,3 +5590,260 @@ fn test_import_markdown_renders_html() {
     assert!(html.contains("<strong>Bold</strong>"));
     assert!(html.contains("<em>italic</em>"));
 }
+
+// ─── Post Reactions ───
+
+#[test]
+fn test_react_to_post() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "React Blog");
+
+    // Create and publish a post
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Reactions Test", "content": "Hello", "status": "published"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+    assert_eq!(post["reaction_count"], 0);
+
+    // React with thumbs up
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/{}/react", id, post_id))
+        .header(ContentType::JSON)
+        .body(r#"{"emoji": "👍"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["total"], 1);
+    assert_eq!(body["reactions"][0]["emoji"], "👍");
+    assert_eq!(body["reactions"][0]["count"], 1);
+}
+
+#[test]
+fn test_get_reactions_empty() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "React Blog 2");
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "No Reactions", "content": "Hello", "status": "published"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/reactions", id, post_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["total"], 0);
+    assert_eq!(body["reactions"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn test_react_invalid_emoji() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "React Blog 3");
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Invalid Emoji", "content": "Hello", "status": "published"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/{}/react", id, post_id))
+        .header(ContentType::JSON)
+        .body(r#"{"emoji": "💩"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::UnprocessableEntity);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["code"], "VALIDATION_ERROR");
+}
+
+#[test]
+fn test_react_duplicate_prevented() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "React Blog 4");
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Dup Test", "content": "Hello", "status": "published"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+
+    // First reaction
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/{}/react", id, post_id))
+        .header(ContentType::JSON)
+        .body(r#"{"emoji": "❤️"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+
+    // Duplicate — same IP, same emoji
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/{}/react", id, post_id))
+        .header(ContentType::JSON)
+        .body(r#"{"emoji": "❤️"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Conflict);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["code"], "DUPLICATE_REACTION");
+}
+
+#[test]
+fn test_react_different_emojis_same_ip() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "React Blog 5");
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Multi Emoji", "content": "Hello", "status": "published"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+
+    // React with different emojis
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/{}/react", id, post_id))
+        .header(ContentType::JSON)
+        .body(r#"{"emoji": "👍"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/{}/react", id, post_id))
+        .header(ContentType::JSON)
+        .body(r#"{"emoji": "🔥"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["total"], 2);
+    assert_eq!(body["reactions"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn test_react_to_draft_fails() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "React Blog 6");
+
+    // Create a draft post
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Draft Post", "content": "Hello"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+
+    // Try to react — should fail
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/{}/react", id, post_id))
+        .header(ContentType::JSON)
+        .body(r#"{"emoji": "👍"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+}
+
+#[test]
+fn test_react_nonexistent_post() {
+    let client = test_client();
+    let (id, _) = create_blog_helper(&client, "React Blog 7");
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/nonexistent/react", id))
+        .header(ContentType::JSON)
+        .body(r#"{"emoji": "👍"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+}
+
+#[test]
+fn test_reaction_count_in_post_response() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "React Blog 8");
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Count Test", "content": "Hello", "status": "published"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+    let slug = post["slug"].as_str().unwrap();
+
+    // Add reactions
+    client.post(format!("/api/v1/blogs/{}/posts/{}/react", id, post_id))
+        .header(ContentType::JSON)
+        .body(r#"{"emoji": "🚀"}"#)
+        .dispatch();
+
+    // Check reaction_count in post list
+    let resp = client.get(format!("/api/v1/blogs/{}/posts", id)).dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts[0]["reaction_count"], 1);
+
+    // Check reaction_count in post by slug
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}", id, slug)).dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(post["reaction_count"], 1);
+}
+
+#[test]
+fn test_reactions_cascade_on_post_delete() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "React Blog 9");
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Cascade Test", "content": "Hello", "status": "published"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+
+    // Add a reaction
+    client.post(format!("/api/v1/blogs/{}/posts/{}/react", id, post_id))
+        .header(ContentType::JSON)
+        .body(r#"{"emoji": "🎉"}"#)
+        .dispatch();
+
+    // Delete the post
+    let resp = client.delete(format!("/api/v1/blogs/{}/posts/{}", id, post_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+
+    // Reactions endpoint should 404
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/reactions", id, post_id)).dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+}
+
+#[test]
+fn test_all_allowed_emojis() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "React Blog 10");
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "All Emojis", "content": "Testing all allowed emojis", "status": "published"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+
+    // All allowed emojis should work (using different X-Forwarded-For to avoid duplicate check)
+    let emojis = vec!["👍", "👎", "❤️", "🔥", "🎉", "🤔", "👀", "🚀", "💡", "👏"];
+    for (i, emoji) in emojis.iter().enumerate() {
+        let resp = client.post(format!("/api/v1/blogs/{}/posts/{}/react", id, post_id))
+            .header(ContentType::JSON)
+            .header(Header::new("X-Forwarded-For", format!("10.0.0.{}", i + 1)))
+            .body(format!(r#"{{"emoji": "{}"}}"#, emoji))
+            .dispatch();
+        assert_eq!(resp.status(), Status::Created, "Failed for emoji: {}", emoji);
+    }
+
+    // Verify all 10 reactions
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/reactions", id, post_id)).dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["total"], 10);
+}

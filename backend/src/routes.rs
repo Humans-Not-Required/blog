@@ -14,6 +14,7 @@ type ContentResult = Result<(Status, (rocket::http::ContentType, String)), (Stat
 pub struct RateLimiters {
     pub blog_creation: RateLimiter,
     pub comment_creation: RateLimiter,
+    pub reaction_creation: RateLimiter,
 }
 
 // ─── Models ───
@@ -77,6 +78,7 @@ pub struct PostResponse {
     pub view_count: i64,
     pub is_pinned: bool,
     pub scheduled_at: Option<String>,
+    pub reaction_count: i64,
 }
 
 fn compute_word_count(markdown: &str) -> u64 {
@@ -651,7 +653,8 @@ fn query_post(conn: &rusqlite::Connection, post_id: &str) -> Result<PostResponse
                 (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) as comment_count,
                 (SELECT COUNT(*) FROM post_views v WHERE v.post_id = p.id) as view_count,
                 COALESCE(p.is_pinned, 0) as is_pinned,
-                p.scheduled_at
+                p.scheduled_at,
+                (SELECT COUNT(*) FROM post_reactions r WHERE r.post_id = p.id) as reaction_count
          FROM posts p WHERE p.id = ?1",
         [post_id],
         |row| {
@@ -677,6 +680,7 @@ fn query_post(conn: &rusqlite::Connection, post_id: &str) -> Result<PostResponse
                 view_count: row.get(14)?,
                 is_pinned: row.get::<_, i32>(15)? != 0,
                 scheduled_at: row.get(16)?,
+                reaction_count: row.get(17)?,
             })
         },
     ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))
@@ -696,7 +700,8 @@ pub fn list_posts(blog_id: &str, tag: Option<&str>, limit: Option<i64>, offset: 
                 (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) as comment_count,
                 (SELECT COUNT(*) FROM post_views v WHERE v.post_id = p.id) as view_count,
                 COALESCE(p.is_pinned, 0) as is_pinned,
-                p.scheduled_at
+                p.scheduled_at,
+                (SELECT COUNT(*) FROM post_reactions r WHERE r.post_id = p.id) as reaction_count
          FROM posts p WHERE p.blog_id = ?1"
     );
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(blog_id.to_string())];
@@ -745,6 +750,7 @@ pub fn list_posts(blog_id: &str, tag: Option<&str>, limit: Option<i64>, offset: 
             view_count: row.get(14)?,
             is_pinned: row.get::<_, i32>(15)? != 0,
             scheduled_at: row.get(16)?,
+            reaction_count: row.get(17)?,
         })
     }).map_err(|e| db_err(&e.to_string()))?
     .filter_map(|r| r.ok())
@@ -761,7 +767,8 @@ pub fn get_post_by_slug(blog_id: &str, slug: &str, client_ip: ClientIp, db: &Sta
                 (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) as comment_count,
                 (SELECT COUNT(*) FROM post_views v WHERE v.post_id = p.id) as view_count,
                 COALESCE(p.is_pinned, 0) as is_pinned,
-                p.scheduled_at
+                p.scheduled_at,
+                (SELECT COUNT(*) FROM post_reactions r WHERE r.post_id = p.id) as reaction_count
          FROM posts p WHERE p.blog_id = ?1 AND p.slug = ?2",
         rusqlite::params![blog_id, slug],
         |row| {
@@ -787,6 +794,7 @@ pub fn get_post_by_slug(blog_id: &str, slug: &str, client_ip: ClientIp, db: &Sta
                 view_count: row.get(14)?,
                 is_pinned: row.get::<_, i32>(15)? != 0,
                 scheduled_at: row.get(16)?,
+                reaction_count: row.get(17)?,
             })
         },
     ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))?;
@@ -2449,4 +2457,165 @@ pub fn publish_scheduled(db: &State<DbPool>, sem: &State<SemanticIndex>) -> Json
         published_count: ids.len(),
         published_post_ids: ids,
     })
+}
+
+// ─── Post Reactions ───
+
+/// Allowed emoji set for reactions. Keeps responses clean and prevents abuse.
+const ALLOWED_REACTIONS: &[&str] = &[
+    "👍", "👎", "❤️", "🔥", "🎉", "🤔", "👀", "🚀", "💡", "👏",
+];
+
+#[derive(Deserialize)]
+pub struct ReactReq {
+    pub emoji: String,
+}
+
+#[derive(Serialize)]
+pub struct ReactionSummary {
+    pub emoji: String,
+    pub count: i64,
+}
+
+#[derive(Serialize)]
+pub struct ReactionsResponse {
+    pub post_id: String,
+    pub total: i64,
+    pub reactions: Vec<ReactionSummary>,
+}
+
+#[post("/blogs/<blog_id>/posts/<post_id>/react", format = "json", data = "<req>")]
+pub fn react_to_post(
+    blog_id: &str,
+    post_id: &str,
+    req: Json<ReactReq>,
+    client_ip: ClientIp,
+    limiters: &State<RateLimiters>,
+    db: &State<DbPool>,
+) -> Result<(Status, Json<ReactionsResponse>), (Status, Json<ApiError>)> {
+    // Rate limit
+    let rl_key = format!("{}:{}", client_ip.0, post_id);
+    let rl = limiters.reaction_creation.check_default(&rl_key);
+    if !rl.allowed {
+        return Err(err(
+            Status::TooManyRequests,
+            &format!("Rate limit exceeded. Try again in {} seconds", rl.reset_secs),
+            "RATE_LIMIT_EXCEEDED",
+        ));
+    }
+
+    let emoji = req.emoji.trim();
+    if !ALLOWED_REACTIONS.contains(&emoji) {
+        let allowed = ALLOWED_REACTIONS.join(", ");
+        return Err(err(
+            Status::UnprocessableEntity,
+            &format!("Invalid emoji. Allowed: {}", allowed),
+            "VALIDATION_ERROR",
+        ));
+    }
+
+    let conn = db.conn();
+
+    // Verify post exists, belongs to blog, and is published
+    conn.query_row(
+        "SELECT 1 FROM posts WHERE id = ?1 AND blog_id = ?2 AND status = 'published'",
+        rusqlite::params![post_id, blog_id],
+        |_| Ok(()),
+    )
+    .map_err(|_| err(Status::NotFound, "Post not found or not published", "NOT_FOUND"))?;
+
+    // Check for duplicate reaction from same IP + emoji (prevent spam)
+    let already_reacted: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM post_reactions WHERE post_id = ?1 AND emoji = ?2 AND client_ip = ?3",
+            rusqlite::params![post_id, emoji, client_ip.0],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+        > 0;
+
+    if already_reacted {
+        return Err(err(
+            Status::Conflict,
+            "Already reacted with this emoji",
+            "DUPLICATE_REACTION",
+        ));
+    }
+
+    // Insert reaction
+    conn.execute(
+        "INSERT INTO post_reactions (post_id, emoji, client_ip) VALUES (?1, ?2, ?3)",
+        rusqlite::params![post_id, emoji, client_ip.0],
+    )
+    .map_err(|e| db_err(&e.to_string()))?;
+
+    // Return updated reaction summary
+    let reactions = get_reaction_summary(&conn, post_id);
+    let total: i64 = reactions.iter().map(|r| r.count).sum();
+
+    drop(conn);
+
+    // Fire webhook
+    webhooks::fire_webhooks(
+        db.inner(),
+        blog_id,
+        "post.reacted",
+        serde_json::json!({
+            "post_id": post_id,
+            "emoji": emoji,
+        }),
+    );
+
+    Ok((
+        Status::Created,
+        Json(ReactionsResponse {
+            post_id: post_id.to_string(),
+            total,
+            reactions,
+        }),
+    ))
+}
+
+#[get("/blogs/<blog_id>/posts/<post_id>/reactions")]
+pub fn get_reactions(
+    blog_id: &str,
+    post_id: &str,
+    db: &State<DbPool>,
+) -> Result<Json<ReactionsResponse>, (Status, Json<ApiError>)> {
+    let conn = db.conn();
+
+    // Verify post exists and belongs to blog
+    conn.query_row(
+        "SELECT 1 FROM posts WHERE id = ?1 AND blog_id = ?2",
+        rusqlite::params![post_id, blog_id],
+        |_| Ok(()),
+    )
+    .map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))?;
+
+    let reactions = get_reaction_summary(&conn, post_id);
+    let total: i64 = reactions.iter().map(|r| r.count).sum();
+
+    Ok(Json(ReactionsResponse {
+        post_id: post_id.to_string(),
+        total,
+        reactions,
+    }))
+}
+
+/// Get aggregated reaction counts for a post.
+fn get_reaction_summary(conn: &rusqlite::Connection, post_id: &str) -> Vec<ReactionSummary> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT emoji, COUNT(*) as count FROM post_reactions WHERE post_id = ?1 GROUP BY emoji ORDER BY count DESC",
+        )
+        .unwrap();
+    stmt.query_map([post_id], |row| {
+        Ok(ReactionSummary {
+            emoji: row.get(0)?,
+            count: row.get(1)?,
+        })
+    })
+    .unwrap()
+    .filter_map(|r| r.ok())
+    .collect()
 }

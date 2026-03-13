@@ -283,3 +283,50 @@ Manual trigger (admin):
 - `scheduled_at` must be valid ISO-8601 datetime
 - Changing status away from "scheduled" clears `scheduled_at`
 - Keeping status as "scheduled" preserves existing `scheduled_at` if not explicitly changed
+
+
+## Post Reactions
+
+Anonymous emoji reactions on published posts. Agent-friendly: lightweight engagement metrics without auth.
+
+### Data Model
+```sql
+CREATE TABLE post_reactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+    emoji TEXT NOT NULL,
+    client_ip TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+```
+
+### API
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | /api/v1/blogs/:id/posts/:post_id/react | None | Add emoji reaction |
+| GET | /api/v1/blogs/:id/posts/:post_id/reactions | None | Get reaction counts |
+
+### Allowed Emojis
+👍 👎 ❤️ 🔥 🎉 🤔 👀 🚀 💡 👏
+
+### Constraints
+- Only published posts can receive reactions
+- One reaction per emoji per IP (duplicates return 409 Conflict)
+- Different emojis from the same IP are allowed
+- Rate limit: 20 reactions/hr per IP per post (configurable via `REACTION_RATE_LIMIT`)
+- Invalid emojis return 422
+- `reaction_count` field included in all PostResponse payloads
+- Reactions cascade-delete when the parent post is deleted
+- Webhook event: `post.reacted` fires with `{post_id, emoji}`
+
+### Response Format
+```json
+{
+  "post_id": "...",
+  "total": 5,
+  "reactions": [
+    {"emoji": "👍", "count": 3},
+    {"emoji": "🔥", "count": 2}
+  ]
+}
+```

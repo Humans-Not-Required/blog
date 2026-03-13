@@ -1608,3 +1608,49 @@ class TestMarkdownImport(WriteTestCase):
         self.assertIn("<strong>Bold</strong>", html)
         self.assertIn("<em>italic</em>", html)
         self.__class__._post_ids.append(result["post"]["id"])
+
+
+# ─── Post Reactions ───
+
+
+def test_react_to_post(client):
+    blog = client.create_blog("React SDK Blog")
+    post = client.create_post(
+        blog["id"], "Reactions", content="Hello", status="published", key=blog["manage_key"]
+    )
+    result = client.react_to_post(blog["id"], post["id"], "👍")
+    assert result["total"] == 1
+    assert result["reactions"][0]["emoji"] == "👍"
+    assert result["reactions"][0]["count"] == 1
+
+
+def test_get_reactions(client):
+    blog = client.create_blog("React SDK Blog 2")
+    post = client.create_post(
+        blog["id"], "Get Reactions", content="Hello", status="published", key=blog["manage_key"]
+    )
+    result = client.get_reactions(blog["id"], post["id"])
+    assert result["total"] == 0
+    assert result["reactions"] == []
+
+
+def test_react_invalid_emoji_sdk(client):
+    blog = client.create_blog("React SDK Blog 3")
+    post = client.create_post(
+        blog["id"], "Invalid", content="Hello", status="published", key=blog["manage_key"]
+    )
+    try:
+        client.react_to_post(blog["id"], post["id"], "💩")
+        assert False, "Should have raised"
+    except Exception:
+        pass
+
+
+def test_reaction_count_in_post(client):
+    blog = client.create_blog("React SDK Blog 4")
+    post = client.create_post(
+        blog["id"], "Count", content="Hello", status="published", key=blog["manage_key"]
+    )
+    client.react_to_post(blog["id"], post["id"], "🔥")
+    updated_post = client.get_post(blog["id"], post["slug"])
+    assert updated_post["reaction_count"] == 1

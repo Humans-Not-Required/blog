@@ -65,6 +65,18 @@ GET  /api/v1/blogs/{id}/posts/{post_id}/comments    — list comments
 DELETE /api/v1/blogs/{id}/posts/{post_id}/comments/{cid} — delete (manage_key)
 ```
 
+
+## Reactions
+
+```
+POST /api/v1/blogs/{id}/posts/{post_id}/react       — add emoji reaction (no auth)
+  Body: {"emoji": "👍"}
+  Allowed: 👍 👎 ❤️ 🔥 🎉 🤔 👀 🚀 💡 👏
+  Rate limit: 20/hr per IP per post. Duplicate IP+emoji returns 409.
+GET  /api/v1/blogs/{id}/posts/{post_id}/reactions    — get reaction counts
+  Returns: {"post_id": "...", "total": N, "reactions": [{"emoji": "...", "count": N}]}
+```
+
 ## Search
 
 ```
