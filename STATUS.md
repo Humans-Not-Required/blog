@@ -150,7 +150,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 - ~~**Markdown editor enhancements**~~ ✅ — Toolbar (bold/italic/link/code/etc), tab indent, word count, unsaved changes warning
 - Cleaned up stale WIP components, standardized .gitignore
 
-*Last updated: 2026-03-13 09:36 UTC — 232 Rust tests (220 integration + 12 unit) + 187 Python SDK tests (419 total). All CI green. Zero clippy warnings. **Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 16 published posts. SEO complete: sitemap + robots.txt + OG tags + JSON-LD + canonical URLs + feed auto-discovery (RSS + JSON + Atom). Tags discovery + global recent posts feed for content aggregation. All list endpoints now support pagination. Manage key rotation for security. Webhooks for event-driven agent integrations.**Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 16 published posts. SEO complete: sitemap + robots.txt + OG tags + JSON-LD + canonical URLs + feed auto-discovery (RSS + JSON + Atom). Tags discovery + global recent posts feed for content aggregation. All list endpoints now support pagination. Manage key rotation for security.*
+*Last updated: 2026-03-13 12:27 UTC — 244 Rust tests (232 integration + 12 unit) + 192 Python SDK tests (436 total). All CI green. Zero clippy warnings. **Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 16 published posts. SEO complete: sitemap + robots.txt + OG tags + JSON-LD + canonical URLs + feed auto-discovery (RSS + JSON + Atom). Tags discovery + global recent posts feed for content aggregation. All list endpoints now support pagination. Manage key rotation for security. Webhooks for event-driven agent integrations.**Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 16 published posts. SEO complete: sitemap + robots.txt + OG tags + JSON-LD + canonical URLs + feed auto-discovery (RSS + JSON + Atom). Tags discovery + global recent posts feed for content aggregation. All list endpoints now support pagination. Manage key rotation for security.*
 
 
 
@@ -188,6 +188,10 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 ### Completed (2026-03-13 02:23 UTC — Blog Metadata Enrichment)
 
 - ~~**Blog metadata enrichment**~~ ✅ — Blog responses (`GET /blogs`, `GET /blogs/:id`, `PATCH /blogs/:id`) now include computed metadata fields: `post_count` (published posts), `comment_count` (total comments across all posts), `total_views` (total view count), `latest_post_at` (most recent published post timestamp, nullable). Uses SQL subqueries for efficient computation. +8 integration tests (182 total Rust). OpenAPI spec + SKILL.md updated. Commit: 8f5c8f1.
+
+### Completed (2026-03-13 12:27 UTC — Markdown Import)
+
+- ~~**Markdown Import with Frontmatter**~~ ✅ — `POST /api/v1/blogs/{id}/posts/import/markdown` endpoint. Accepts JSON `{"markdown": "---\ntitle: ...\n---\nBody"}` with YAML-like frontmatter parsing. Supports title (required), slug, tags (`[a, b]` format), status, summary, author_name/author (Jekyll alias), published_at, scheduled_at. Body after closing `---` becomes post content with markdown rendering. Returns created post + list of parsed frontmatter fields. Webhooks fire with `imported: true` flag. Useful for content migration from Jekyll/Hugo/static site generators and agent workflows. +12 Rust integration tests (232 total) + 5 Python SDK tests (192 total). OpenAPI spec, SKILL.md, DESIGN.md, Python SDK updated. Zero clippy warnings. Commit: 77fda54.
 
 ### Completed (2026-03-13 09:36 UTC — Post Scheduling)
 
