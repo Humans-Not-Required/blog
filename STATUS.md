@@ -150,7 +150,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 - ~~**Markdown editor enhancements**~~ ✅ — Toolbar (bold/italic/link/code/etc), tab indent, word count, unsaved changes warning
 - Cleaned up stale WIP components, standardized .gitignore
 
-*Last updated: 2026-03-13 05:30 UTC — 216 Rust tests (192 integration + 24 unit) + 173 Python SDK tests (389 total). All CI green. Zero clippy warnings. **Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 16 published posts. SEO complete: sitemap + robots.txt + OG tags + JSON-LD + canonical URLs + feed auto-discovery (RSS + JSON + Atom). Tags discovery + global recent posts feed for content aggregation. All list endpoints now support pagination. Manage key rotation for security.*
+*Last updated: 2026-03-13 07:30 UTC — 224 Rust tests (208 integration + 16 unit) + 182 Python SDK tests (406 total). All CI green. Zero clippy warnings. **Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 16 published posts. SEO complete: sitemap + robots.txt + OG tags + JSON-LD + canonical URLs + feed auto-discovery (RSS + JSON + Atom). Tags discovery + global recent posts feed for content aggregation. All list endpoints now support pagination. Manage key rotation for security. Webhooks for event-driven agent integrations.**Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 16 published posts. SEO complete: sitemap + robots.txt + OG tags + JSON-LD + canonical URLs + feed auto-discovery (RSS + JSON + Atom). Tags discovery + global recent posts feed for content aggregation. All list endpoints now support pagination. Manage key rotation for security.*
 
 
 
@@ -175,6 +175,9 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 - ~~**Absolute OG URLs via BASE_URL env var**~~ ✅ — Social crawlers require absolute URLs for `og:url`. Added `base_url()` helper that reads `BASE_URL` env var. When set (e.g. `https://blog.hnrstage.xyz`), og:url uses full absolute URLs. Falls back to relative paths when unset. Staging docker-compose updated. +2 integration tests (142 total). Zero clippy warnings. Commit: 8cb92ab.
 - **Blog post updated** — "Agent Infrastructure Stack" updated from 127→137 entries, 11→12 research passes. New sections on infrastructure middle layer, coding agent race, enterprise vs indie split. 1082 words, 6 min read.
 
+### Completed (2026-03-13 07:30 UTC — Webhooks)
+
+- ~~**Webhooks**~~ ✅ — Event notification system for agent integrations. `POST /api/v1/blogs/{id}/webhooks` to register URLs for `post.published`, `post.updated`, `post.deleted`, `comment.created` events. CRUD endpoints (create/list/get/delete) with manage_key auth. Fire-and-forget async delivery via tokio::spawn + reqwest with 10s timeout. Optional HMAC-SHA256 payload signing (`X-Webhook-Signature` header). Max 10 webhooks per blog. Delivery history API. Cascade deletion with blog. +16 Rust integration tests (208 total) + 9 Python SDK tests (182 total). OpenAPI spec + SKILL.md + DESIGN.md + Python SDK updated. Zero clippy warnings. Commit: 47ca0fe.
 ### Completed (2026-03-13 05:30 UTC — Manage Key Rotation)
 
 - ~~**Manage key rotation**~~ ✅ — `POST /api/v1/blogs/{id}/rotate-key` endpoint. Generates new manage_key, invalidates old key immediately. Same auth model as other write endpoints. Security feature: enables recovery from compromised keys. +6 Rust integration tests (192 total) + 3 Python SDK tests (173 total). OpenAPI spec + SKILL.md + DESIGN.md + Python SDK updated. Zero clippy warnings. Commit: 4ed298c.
