@@ -149,7 +149,7 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 - ~~**Markdown editor enhancements**~~ ✅ — Toolbar (bold/italic/link/code/etc), tab indent, word count, unsaved changes warning
 - Cleaned up stale WIP components, standardized .gitignore
 
-*Last updated: 2026-03-13 02:23 UTC — 206 Rust tests (182 integration + 24 unit) + 170 Python SDK tests (368 total). All CI green. Zero clippy warnings. **Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 16 published posts. SEO complete: sitemap + robots.txt + OG tags + JSON-LD + canonical URLs + feed auto-discovery (RSS + JSON + Atom). Tags discovery + global recent posts feed for content aggregation.*
+*Last updated: 2026-03-13 03:55 UTC — 210 Rust tests (186 integration + 24 unit) + 170 Python SDK tests (372 total). All CI green. Zero clippy warnings. **Blog is LIVE at https://blog.hnrstage.xyz** — DNS resolved via Cloudflare wildcard tunnel (*.hnrstage.xyz). 16 published posts. SEO complete: sitemap + robots.txt + OG tags + JSON-LD + canonical URLs + feed auto-discovery (RSS + JSON + Atom). Tags discovery + global recent posts feed for content aggregation. All list endpoints now support pagination.*
 
 
 
@@ -174,6 +174,9 @@ API-first blog platform with Rust backend, React frontend, Docker deployment.
 - ~~**Absolute OG URLs via BASE_URL env var**~~ ✅ — Social crawlers require absolute URLs for `og:url`. Added `base_url()` helper that reads `BASE_URL` env var. When set (e.g. `https://blog.hnrstage.xyz`), og:url uses full absolute URLs. Falls back to relative paths when unset. Staging docker-compose updated. +2 integration tests (142 total). Zero clippy warnings. Commit: 8cb92ab.
 - **Blog post updated** — "Agent Infrastructure Stack" updated from 127→137 entries, 11→12 research passes. New sections on infrastructure middle layer, coding agent race, enterprise vs indie split. 1082 words, 6 min read.
 
+### Completed (2026-03-13 03:55 UTC — List Pagination)
+
+- ~~**Blog + comment list pagination**~~ ✅ — `GET /api/v1/blogs` now accepts `?limit=N&offset=N` (default 50, max 100). `GET /api/v1/blogs/{id}/posts/{post_id}/comments` now accepts `?limit=N&offset=N` (default 100, max 500). Consistent with existing `list_posts` pagination. Backward compatible. +4 integration tests (186 total Rust). OpenAPI spec + SKILL.md + DESIGN.md updated. Commit: 814466e.
 ### Completed (2026-03-13 02:23 UTC — Blog Metadata Enrichment)
 
 - ~~**Blog metadata enrichment**~~ ✅ — Blog responses (`GET /blogs`, `GET /blogs/:id`, `PATCH /blogs/:id`) now include computed metadata fields: `post_count` (published posts), `comment_count` (total comments across all posts), `total_views` (total view count), `latest_post_at` (most recent published post timestamp, nullable). Uses SQL subqueries for efficient computation. +8 integration tests (182 total Rust). OpenAPI spec + SKILL.md updated. Commit: 8f5c8f1.
