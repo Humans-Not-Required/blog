@@ -77,6 +77,16 @@ GET  /api/v1/blogs/{id}/posts/{post_id}/reactions    — get reaction counts
   Returns: {"post_id": "...", "total": N, "reactions": [{"emoji": "...", "count": N}]}
 ```
 
+## Revisions
+
+```
+GET  /api/v1/blogs/{id}/posts/{post_id}/revisions          — list revisions (newest first, ?limit, ?offset)
+GET  /api/v1/blogs/{id}/posts/{post_id}/revisions/{rev}    — get full revision content
+POST /api/v1/blogs/{id}/posts/{post_id}/revisions/{rev}/restore — restore post to revision
+```
+All revision endpoints require manage_key. Revisions are auto-created on each post update.
+Restore saves current state as new revision first (non-destructive).
+
 ## Search
 
 ```

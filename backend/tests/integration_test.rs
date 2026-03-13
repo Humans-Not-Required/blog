@@ -5847,3 +5847,327 @@ fn test_all_allowed_emojis() {
     let body: serde_json::Value = resp.into_json().unwrap();
     assert_eq!(body["total"], 10);
 }
+
+// ─── Post Revisions Tests ───
+
+#[test]
+fn test_revision_created_on_update() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Revision Blog 1");
+
+    // Create a post
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Original Title", "content": "Original content", "status": "published"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+
+    // Update the post
+    client.patch(format!("/api/v1/blogs/{}/posts/{}", id, post_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Updated Title", "content": "Updated content"}"#)
+        .dispatch();
+
+    // List revisions — should have 1 revision (the original state)
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/revisions", id, post_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let revisions: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(revisions.len(), 1);
+    assert_eq!(revisions[0]["title"], "Original Title");
+    assert_eq!(revisions[0]["revision_number"], 1);
+}
+
+#[test]
+fn test_multiple_revisions() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Revision Blog 2");
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "V1", "content": "Content v1", "status": "published"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+
+    // Update 3 times
+    for i in 2..=4 {
+        client.patch(format!("/api/v1/blogs/{}/posts/{}", id, post_id))
+            .header(ContentType::JSON)
+            .header(Header::new("Authorization", format!("Bearer {}", key)))
+            .body(format!(r#"{{"title": "V{}", "content": "Content v{}"}}"#, i, i))
+            .dispatch();
+    }
+
+    // Should have 3 revisions (v1, v2, v3 — the states before updates 2, 3, 4)
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/revisions", id, post_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    let revisions: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(revisions.len(), 3);
+    // Newest first
+    assert_eq!(revisions[0]["revision_number"], 3);
+    assert_eq!(revisions[0]["title"], "V3");
+    assert_eq!(revisions[1]["revision_number"], 2);
+    assert_eq!(revisions[1]["title"], "V2");
+    assert_eq!(revisions[2]["revision_number"], 1);
+    assert_eq!(revisions[2]["title"], "V1");
+}
+
+#[test]
+fn test_get_specific_revision() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Revision Blog 3");
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Original", "content": "Original body", "summary": "Sum1", "status": "published"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+
+    // Update
+    client.patch(format!("/api/v1/blogs/{}/posts/{}", id, post_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Changed"}"#)
+        .dispatch();
+
+    // Get revision 1 — should have original content
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/revisions/1", id, post_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let rev: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(rev["title"], "Original");
+    assert_eq!(rev["content"], "Original body");
+    assert_eq!(rev["summary"], "Sum1");
+    assert_eq!(rev["revision_number"], 1);
+    assert!(rev["word_count"].as_u64().unwrap() > 0);
+}
+
+#[test]
+fn test_revision_not_found() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Revision Blog 4");
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Test", "content": "Content"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+
+    // No revisions exist yet (no updates)
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/revisions/99", id, post_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+}
+
+#[test]
+fn test_revisions_require_auth() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Revision Blog 5");
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Test", "content": "Content"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+
+    // List revisions without auth — should fail (Forward -> 404 due to spa_fallback)
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/revisions", id, post_id))
+        .dispatch();
+    assert_ne!(resp.status(), Status::Ok);
+
+    // Get revision without auth — should fail
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/revisions/1", id, post_id))
+        .dispatch();
+    assert_ne!(resp.status(), Status::Ok);
+}
+
+#[test]
+fn test_restore_revision() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Revision Blog 6");
+
+    // Create post with v1 content
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Version 1", "content": "Body version 1", "summary": "S1", "status": "published"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+
+    // Update to v2
+    client.patch(format!("/api/v1/blogs/{}/posts/{}", id, post_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Version 2", "content": "Body version 2", "summary": "S2"}"#)
+        .dispatch();
+
+    // Update to v3
+    client.patch(format!("/api/v1/blogs/{}/posts/{}", id, post_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Version 3", "content": "Body version 3", "summary": "S3"}"#)
+        .dispatch();
+
+    // Restore to revision 1 (v1 content)
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/{}/revisions/1/restore", id, post_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let restored: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(restored["title"], "Version 1");
+    assert_eq!(restored["content"], "Body version 1");
+    assert_eq!(restored["summary"], "S1");
+    // Status should remain published (structural field preserved)
+    assert_eq!(restored["status"], "published");
+
+    // Restoring should have created a new revision (v3 state saved before restore)
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/revisions", id, post_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    let revisions: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(revisions.len(), 3); // rev1=v1, rev2=v2, rev3=v3(saved before restore)
+}
+
+#[test]
+fn test_restore_nonexistent_revision() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Revision Blog 7");
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Test", "content": "Content", "status": "published"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts/{}/revisions/99/restore", id, post_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+}
+
+#[test]
+fn test_revisions_cascade_delete() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Revision Blog 8");
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Will Delete", "content": "Content", "status": "published"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+
+    // Create 2 revisions
+    client.patch(format!("/api/v1/blogs/{}/posts/{}", id, post_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Updated 1"}"#)
+        .dispatch();
+    client.patch(format!("/api/v1/blogs/{}/posts/{}", id, post_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Updated 2"}"#)
+        .dispatch();
+
+    // Delete the post
+    let resp = client.delete(format!("/api/v1/blogs/{}/posts/{}", id, post_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+
+    // Revisions should be gone too (cascade)
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/revisions", id, post_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::NotFound); // post not found
+}
+
+#[test]
+fn test_revision_preserves_tags() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Revision Blog 9");
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Tagged", "content": "Content", "tags": ["rust", "blog"], "status": "published"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+
+    // Update with different tags
+    client.patch(format!("/api/v1/blogs/{}/posts/{}", id, post_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"tags": ["python", "api"]}"#)
+        .dispatch();
+
+    // Revision should have original tags
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/revisions/1", id, post_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    let rev: serde_json::Value = resp.into_json().unwrap();
+    let tags = rev["tags"].as_array().unwrap();
+    assert!(tags.contains(&serde_json::Value::String("rust".to_string())));
+    assert!(tags.contains(&serde_json::Value::String("blog".to_string())));
+}
+
+#[test]
+fn test_revision_list_pagination() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Revision Blog 10");
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "V0", "content": "c", "status": "published"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+
+    // Create 5 revisions
+    for i in 1..=5 {
+        client.patch(format!("/api/v1/blogs/{}/posts/{}", id, post_id))
+            .header(ContentType::JSON)
+            .header(Header::new("Authorization", format!("Bearer {}", key)))
+            .body(format!(r#"{{"title": "V{}"}}"#, i))
+            .dispatch();
+    }
+
+    // Get first 2
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/revisions?limit=2&offset=0", id, post_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    let revisions: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(revisions.len(), 2);
+    assert_eq!(revisions[0]["revision_number"], 5); // newest first
+    assert_eq!(revisions[1]["revision_number"], 4);
+
+    // Get next 2
+    let resp = client.get(format!("/api/v1/blogs/{}/posts/{}/revisions?limit=2&offset=2", id, post_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    let revisions: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(revisions.len(), 2);
+    assert_eq!(revisions[0]["revision_number"], 3);
+    assert_eq!(revisions[1]["revision_number"], 2);
+}

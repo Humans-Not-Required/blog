@@ -830,6 +830,9 @@ pub fn update_post(blog_id: &str, post_id: &str, req: Json<UpdatePostReq>, token
         )),
     ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))?;
 
+    // Save a revision of the current state before modifying
+    crate::db::save_revision(&conn, post_id, blog_id);
+
     let title = req.title.as_deref().unwrap_or(&current.0);
     let slug = req.slug.as_deref().map(slugify).unwrap_or(current.1);
     let content = req.content.as_deref().unwrap_or(&current.2);
@@ -2618,4 +2621,204 @@ fn get_reaction_summary(conn: &rusqlite::Connection, post_id: &str) -> Vec<React
     .unwrap()
     .filter_map(|r| r.ok())
     .collect()
+}
+
+// ─── Post Revisions ───
+
+#[derive(Serialize)]
+pub struct RevisionResponse {
+    pub id: i64,
+    pub post_id: String,
+    pub blog_id: String,
+    pub title: String,
+    pub content: String,
+    pub content_html: String,
+    pub summary: String,
+    pub tags: Vec<String>,
+    pub status: String,
+    pub author_name: String,
+    pub revision_number: i64,
+    pub created_at: String,
+    pub word_count: u64,
+}
+
+#[derive(Serialize)]
+pub struct RevisionListItem {
+    pub id: i64,
+    pub revision_number: i64,
+    pub title: String,
+    pub author_name: String,
+    pub status: String,
+    pub word_count: u64,
+    pub created_at: String,
+}
+
+fn parse_revision_row(row: &rusqlite::Row) -> rusqlite::Result<RevisionResponse> {
+    let content: String = row.get(4)?;
+    let tags_str: String = row.get(7)?;
+    let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+    let wc = compute_word_count(&content);
+    Ok(RevisionResponse {
+        id: row.get(0)?,
+        post_id: row.get(1)?,
+        blog_id: row.get(2)?,
+        title: row.get(3)?,
+        content,
+        content_html: row.get(5)?,
+        summary: row.get(6)?,
+        tags,
+        status: row.get(8)?,
+        author_name: row.get(9)?,
+        revision_number: row.get(10)?,
+        created_at: row.get(11)?,
+        word_count: wc,
+    })
+}
+
+/// List revisions for a post (newest first). Requires manage_key.
+#[get("/blogs/<blog_id>/posts/<post_id>/revisions?<limit>&<offset>")]
+pub fn list_revisions(
+    blog_id: &str,
+    post_id: &str,
+    limit: Option<i64>,
+    offset: Option<i64>,
+    token: BlogToken,
+    db: &State<DbPool>,
+) -> Result<Json<Vec<RevisionListItem>>, (Status, Json<ApiError>)> {
+    let conn = db.conn();
+    verify_blog_key(&conn, blog_id, &token)?;
+
+    // Verify post belongs to this blog
+    conn.query_row(
+        "SELECT id FROM posts WHERE id = ?1 AND blog_id = ?2",
+        rusqlite::params![post_id, blog_id],
+        |_| Ok(()),
+    ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))?;
+
+    let lim = limit.unwrap_or(50).min(100);
+    let off = offset.unwrap_or(0);
+
+    let mut stmt = conn.prepare(
+        "SELECT id, revision_number, title, author_name, status, content, created_at
+         FROM post_revisions WHERE post_id = ?1
+         ORDER BY revision_number DESC LIMIT ?2 OFFSET ?3"
+    ).map_err(|_| db_err("query"))?;
+
+    let revisions: Vec<RevisionListItem> = stmt.query_map(
+        rusqlite::params![post_id, lim, off],
+        |row| {
+            let content: String = row.get(5)?;
+            let wc = compute_word_count(&content);
+            Ok(RevisionListItem {
+                id: row.get(0)?,
+                revision_number: row.get(1)?,
+                title: row.get(2)?,
+                author_name: row.get(3)?,
+                status: row.get(4)?,
+                word_count: wc,
+                created_at: row.get(6)?,
+            })
+        },
+    ).map_err(|_| db_err("query"))?
+    .filter_map(|r| r.ok())
+    .collect();
+
+    Ok(Json(revisions))
+}
+
+/// Get a specific revision by revision number. Requires manage_key.
+#[get("/blogs/<blog_id>/posts/<post_id>/revisions/<revision_number>")]
+pub fn get_revision(
+    blog_id: &str,
+    post_id: &str,
+    revision_number: i64,
+    token: BlogToken,
+    db: &State<DbPool>,
+) -> Result<Json<RevisionResponse>, (Status, Json<ApiError>)> {
+    let conn = db.conn();
+    verify_blog_key(&conn, blog_id, &token)?;
+
+    // Verify post belongs to this blog
+    conn.query_row(
+        "SELECT id FROM posts WHERE id = ?1 AND blog_id = ?2",
+        rusqlite::params![post_id, blog_id],
+        |_| Ok(()),
+    ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))?;
+
+    let revision = conn.query_row(
+        "SELECT id, post_id, blog_id, title, content, content_html, summary, tags, status, author_name, revision_number, created_at
+         FROM post_revisions WHERE post_id = ?1 AND revision_number = ?2",
+        rusqlite::params![post_id, revision_number],
+        parse_revision_row,
+    ).map_err(|_| err(Status::NotFound, "Revision not found", "NOT_FOUND"))?;
+
+    Ok(Json(revision))
+}
+
+/// Restore a post to a previous revision. Requires manage_key.
+/// Saves the current state as a new revision before restoring.
+#[post("/blogs/<blog_id>/posts/<post_id>/revisions/<revision_number>/restore")]
+pub fn restore_revision(
+    blog_id: &str,
+    post_id: &str,
+    revision_number: i64,
+    token: BlogToken,
+    db: &State<DbPool>,
+    sem: &State<SemanticIndex>,
+) -> Result<Json<PostResponse>, (Status, Json<ApiError>)> {
+    let conn = db.conn();
+    verify_blog_key(&conn, blog_id, &token)?;
+
+    // Verify post belongs to this blog
+    conn.query_row(
+        "SELECT id FROM posts WHERE id = ?1 AND blog_id = ?2",
+        rusqlite::params![post_id, blog_id],
+        |_| Ok(()),
+    ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))?;
+
+    // Get the revision to restore
+    let rev = conn.query_row(
+        "SELECT title, content, content_html, summary, tags, status, author_name
+         FROM post_revisions WHERE post_id = ?1 AND revision_number = ?2",
+        rusqlite::params![post_id, revision_number],
+        |row| Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?,
+            row.get::<_, String>(5)?,
+            row.get::<_, String>(6)?,
+        )),
+    ).map_err(|_| err(Status::NotFound, "Revision not found", "NOT_FOUND"))?;
+
+    // Save current state as a new revision before restoring
+    crate::db::save_revision(&conn, post_id, blog_id);
+
+    // Restore the post to the revision's content
+    // Keep current slug, published_at, scheduled_at, is_pinned (structural fields)
+    conn.execute(
+        "UPDATE posts SET title=?1, content=?2, content_html=?3, summary=?4, tags=?5, author_name=?6, updated_at=datetime('now')
+         WHERE id=?7 AND blog_id=?8",
+        rusqlite::params![rev.0, rev.1, rev.2, rev.3, rev.4, rev.6, post_id, blog_id],
+    ).map_err(|_| db_err("update"))?;
+
+    // Update FTS + semantic index
+    crate::db::upsert_fts(&conn, post_id);
+    crate::db::upsert_semantic(&conn, post_id, sem);
+
+    let post = query_post(&conn, post_id)?;
+    drop(conn);
+
+    // Fire webhook for the restored content
+    webhooks::fire_webhooks(db.inner(), blog_id, "post.updated", serde_json::json!({
+        "post_id": post.id,
+        "title": post.title,
+        "slug": post.slug,
+        "author_name": post.author_name,
+        "summary": post.summary,
+        "restored_from_revision": revision_number
+    }));
+
+    Ok(Json(post))
 }

@@ -673,5 +673,57 @@ class Blog:
             "GET", f"/api/v1/blogs/{blog_id}/posts/{post_id}/reactions"
         )
 
+    # ─── Revisions ───
+
+    def list_revisions(
+        self, blog_id: str, post_id: str, *, key: str = None, limit: int = None, offset: int = None
+    ) -> list:
+        """``GET /api/v1/blogs/{blog_id}/posts/{post_id}/revisions``
+
+        List revision history for a post (newest first).
+        A revision is automatically saved before each post update.
+        Requires manage_key.
+        """
+        params = {}
+        if limit is not None:
+            params["limit"] = limit
+        if offset is not None:
+            params["offset"] = offset
+        headers = {"Authorization": f"Bearer {key}"} if key else {}
+        return self._request(
+            "GET", f"/api/v1/blogs/{blog_id}/posts/{post_id}/revisions",
+            params=params, headers=headers,
+        )
+
+    def get_revision(
+        self, blog_id: str, post_id: str, revision_number: int, *, key: str = None
+    ) -> dict:
+        """``GET /api/v1/blogs/{blog_id}/posts/{post_id}/revisions/{revision_number}``
+
+        Get full content of a specific revision by number.
+        Requires manage_key.
+        """
+        headers = {"Authorization": f"Bearer {key}"} if key else {}
+        return self._request(
+            "GET", f"/api/v1/blogs/{blog_id}/posts/{post_id}/revisions/{revision_number}",
+            headers=headers,
+        )
+
+    def restore_revision(
+        self, blog_id: str, post_id: str, revision_number: int, *, key: str = None
+    ) -> dict:
+        """``POST /api/v1/blogs/{blog_id}/posts/{post_id}/revisions/{revision_number}/restore``
+
+        Restore a post to a previous revision. The current state is saved
+        as a new revision before restoring (non-destructive). Structural
+        fields (slug, status, published_at) are preserved.
+        Requires manage_key.
+        """
+        headers = {"Authorization": f"Bearer {key}"} if key else {}
+        return self._request(
+            "POST", f"/api/v1/blogs/{blog_id}/posts/{post_id}/revisions/{revision_number}/restore",
+            headers=headers,
+        )
+
     def __repr__(self) -> str:
         return f"Blog(base_url={self.base_url!r})"

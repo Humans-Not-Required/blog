@@ -99,6 +99,7 @@ pub fn initialize(conn: &Connection) {
     rebuild_fts_index(conn);
     initialize_webhooks(conn);
     initialize_reactions(conn);
+    initialize_revisions(conn);
 }
 
 /// Rebuild the FTS5 index from the posts table. Called on startup.
@@ -254,6 +255,57 @@ pub fn publish_scheduled_posts(conn: &Connection) -> Vec<(String, String)> {
     }
 
     published
+}
+
+// ─── Post Revisions ───
+
+pub fn initialize_revisions(conn: &Connection) {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS post_revisions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+            blog_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL DEFAULT '',
+            content_html TEXT NOT NULL DEFAULT '',
+            summary TEXT DEFAULT '',
+            tags TEXT DEFAULT '[]',
+            status TEXT DEFAULT 'draft',
+            author_name TEXT DEFAULT '',
+            revision_number INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_post_revisions_post_id ON post_revisions(post_id);
+        CREATE INDEX IF NOT EXISTS idx_post_revisions_composite ON post_revisions(post_id, revision_number);
+        ",
+    )
+    .expect("Failed to initialize revisions table");
+}
+
+/// Save a snapshot of the current post state as a revision before an update.
+/// Returns the revision number assigned.
+pub fn save_revision(conn: &Connection, post_id: &str, blog_id: &str) -> Option<i64> {
+    // blog_id reserved for future cross-blog queries
+    let _ = blog_id;
+
+    let next_rev: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(revision_number), 0) + 1 FROM post_revisions WHERE post_id = ?1",
+        [post_id],
+        |row| row.get(0),
+    ).unwrap_or(1);
+
+    let result = conn.execute(
+        "INSERT INTO post_revisions (post_id, blog_id, title, content, content_html, summary, tags, status, author_name, revision_number)
+         SELECT id, blog_id, title, content, content_html, summary, tags, status, author_name, ?2
+         FROM posts WHERE id = ?1",
+        rusqlite::params![post_id, next_rev],
+    );
+
+    match result {
+        Ok(1) => Some(next_rev),
+        _ => None,
+    }
 }
 
 // ─── Post Reactions ───

@@ -105,6 +105,9 @@ fn rocket() -> _ {
             routes::publish_scheduled,
             routes::react_to_post,
             routes::get_reactions,
+            routes::list_revisions,
+            routes::get_revision,
+            routes::restore_revision,
         ])
         .mount("/", routes![routes::skill_md, routes::llms_txt, routes::skills_index, routes::skills_skill_md, routes::sitemap_xml, routes::robots_txt])
         .mount("/", rocket::fs::FileServer::from(static_dir).rank(20))

@@ -70,7 +70,7 @@
       },
       "post": {
         "summary": "Create a new blog",
-        "description": "Creates a blog and returns a manage_key. Save the key — it cannot be retrieved later.",
+        "description": "Creates a blog and returns a manage_key. Save the key \u2014 it cannot be retrieved later.",
         "operationId": "createBlog",
         "tags": [
           "blogs"
@@ -1094,7 +1094,7 @@
     "/blogs/{blogId}/rotate-key": {
       "post": {
         "summary": "Rotate manage key",
-        "description": "Generate a new manage key for the blog. The old key is immediately invalidated. Save the new key — it is shown only once.",
+        "description": "Generate a new manage key for the blog. The old key is immediately invalidated. Save the new key \u2014 it is shown only once.",
         "operationId": "rotateKey",
         "tags": [
           "Blogs"
@@ -1561,7 +1561,7 @@
             "description": "Missing or invalid manage key"
           },
           "409": {
-            "description": "Slug conflict — a post with this slug already exists"
+            "description": "Slug conflict \u2014 a post with this slug already exists"
           },
           "422": {
             "description": "Invalid frontmatter, missing title, or validation error"
@@ -1668,6 +1668,183 @@
           },
           "404": {
             "description": "Post not found"
+          }
+        }
+      }
+    },
+    "/api/v1/blogs/{blog_id}/posts/{post_id}/revisions": {
+      "get": {
+        "tags": [
+          "revisions"
+        ],
+        "summary": "List post revisions",
+        "description": "List revision history for a post (newest first). A revision is automatically created each time a post is updated. Requires manage_key.",
+        "security": [
+          {
+            "manageKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "blog_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of revisions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RevisionListItem"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Post not found"
+          }
+        }
+      }
+    },
+    "/api/v1/blogs/{blog_id}/posts/{post_id}/revisions/{revision_number}": {
+      "get": {
+        "tags": [
+          "revisions"
+        ],
+        "summary": "Get a specific revision",
+        "description": "Get full content of a specific revision by revision number. Requires manage_key.",
+        "security": [
+          {
+            "manageKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "blog_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "revision_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Revision details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Revision"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Post or revision not found"
+          }
+        }
+      }
+    },
+    "/api/v1/blogs/{blog_id}/posts/{post_id}/revisions/{revision_number}/restore": {
+      "post": {
+        "tags": [
+          "revisions"
+        ],
+        "summary": "Restore a post to a previous revision",
+        "description": "Restores the post content to the specified revision. The current state is saved as a new revision before restoring (non-destructive). Slug, status, published_at, and other structural fields are preserved. Requires manage_key.",
+        "security": [
+          {
+            "manageKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "blog_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "post_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "revision_number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Post restored to revision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Post"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Post or revision not found"
           }
         }
       }
@@ -1782,7 +1959,7 @@
           },
           "manage_key": {
             "type": "string",
-            "description": "Save this key — it cannot be retrieved later"
+            "description": "Save this key \u2014 it cannot be retrieved later"
           },
           "view_url": {
             "type": "string"
@@ -2101,7 +2278,7 @@
         "properties": {
           "emoji": {
             "type": "string",
-            "description": "Emoji reaction. Allowed: 👍 👎 ❤️ 🔥 🎉 🤔 👀 🚀 💡 👏"
+            "description": "Emoji reaction. Allowed: \ud83d\udc4d \ud83d\udc4e \u2764\ufe0f \ud83d\udd25 \ud83c\udf89 \ud83e\udd14 \ud83d\udc40 \ud83d\ude80 \ud83d\udca1 \ud83d\udc4f"
           }
         }
       },
@@ -2130,6 +2307,81 @@
             "items": {
               "$ref": "#/components/schemas/ReactionSummary"
             }
+          }
+        }
+      },
+      "RevisionListItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "revision_number": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "author_name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "word_count": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Revision": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "post_id": {
+            "type": "string"
+          },
+          "blog_id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "content_html": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string"
+          },
+          "author_name": {
+            "type": "string"
+          },
+          "revision_number": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "word_count": {
+            "type": "integer"
           }
         }
       }
@@ -2201,6 +2453,10 @@
     {
       "name": "utility",
       "description": "Health check, preview, etc."
+    },
+    {
+      "name": "revisions",
+      "description": "Post revision history"
     }
   ]
 }

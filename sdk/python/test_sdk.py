@@ -1654,3 +1654,65 @@ def test_reaction_count_in_post(client):
     client.react_to_post(blog["id"], post["id"], "🔥")
     updated_post = client.get_post(blog["id"], post["slug"])
     assert updated_post["reaction_count"] == 1
+
+
+# ─── Post Revisions ───
+
+
+def test_list_revisions(client):
+    blog = client.create_blog("Revision SDK Blog 1")
+    post = client.create_post(
+        blog["id"], "Rev V1", content="Content v1", status="published", key=blog["manage_key"]
+    )
+    # Update to create a revision
+    client.update_post(blog["id"], post["id"], title="Rev V2", key=blog["manage_key"])
+    revisions = client.list_revisions(blog["id"], post["id"], key=blog["manage_key"])
+    assert len(revisions) == 1
+    assert revisions[0]["title"] == "Rev V1"
+    assert revisions[0]["revision_number"] == 1
+
+
+def test_get_revision(client):
+    blog = client.create_blog("Revision SDK Blog 2")
+    post = client.create_post(
+        blog["id"], "Detail V1", content="Original body", summary="S1",
+        status="published", key=blog["manage_key"]
+    )
+    client.update_post(blog["id"], post["id"], title="Detail V2", key=blog["manage_key"])
+    rev = client.get_revision(blog["id"], post["id"], 1, key=blog["manage_key"])
+    assert rev["title"] == "Detail V1"
+    assert rev["content"] == "Original body"
+    assert rev["summary"] == "S1"
+    assert rev["revision_number"] == 1
+    assert rev["word_count"] > 0
+
+
+def test_restore_revision(client):
+    blog = client.create_blog("Revision SDK Blog 3")
+    post = client.create_post(
+        blog["id"], "Restore V1", content="Body v1", summary="Sum1",
+        status="published", key=blog["manage_key"]
+    )
+    client.update_post(blog["id"], post["id"], title="Restore V2", content="Body v2", key=blog["manage_key"])
+    restored = client.restore_revision(blog["id"], post["id"], 1, key=blog["manage_key"])
+    assert restored["title"] == "Restore V1"
+    assert restored["content"] == "Body v1"
+    # Status should be preserved
+    assert restored["status"] == "published"
+
+
+def test_revision_pagination(client):
+    blog = client.create_blog("Revision SDK Blog 4")
+    post = client.create_post(
+        blog["id"], "Pag V0", content="c", status="published", key=blog["manage_key"]
+    )
+    for i in range(1, 6):
+        client.update_post(blog["id"], post["id"], title=f"Pag V{i}", key=blog["manage_key"])
+    # Get page 1
+    page1 = client.list_revisions(blog["id"], post["id"], key=blog["manage_key"], limit=2, offset=0)
+    assert len(page1) == 2
+    assert page1[0]["revision_number"] == 5
+    # Get page 2
+    page2 = client.list_revisions(blog["id"], post["id"], key=blog["manage_key"], limit=2, offset=2)
+    assert len(page2) == 2
+    assert page2[0]["revision_number"] == 3
