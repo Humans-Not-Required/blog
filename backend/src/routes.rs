@@ -76,6 +76,7 @@ pub struct PostResponse {
     pub reading_time_minutes: u32,
     pub view_count: i64,
     pub is_pinned: bool,
+    pub scheduled_at: Option<String>,
 }
 
 fn compute_word_count(markdown: &str) -> u64 {
@@ -121,6 +122,7 @@ pub struct CreatePostReq {
     pub status: Option<String>,
     pub author_name: Option<String>,
     pub slug: Option<String>,
+    pub scheduled_at: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -132,6 +134,7 @@ pub struct UpdatePostReq {
     pub status: Option<String>,
     pub author_name: Option<String>,
     pub slug: Option<String>,
+    pub scheduled_at: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -416,11 +419,26 @@ pub fn create_post(blog_id: &str, req: Json<CreatePostReq>, token: BlogToken, db
     let tags = serde_json::to_string(&req.tags.as_deref().unwrap_or(&[])).unwrap_or_else(|_| "[]".to_string());
     let status = req.status.as_deref().unwrap_or("draft");
     let author_name = req.author_name.as_deref().unwrap_or("");
+
+    if status == "scheduled" && req.scheduled_at.is_none() {
+        return Err(err(Status::UnprocessableEntity, "scheduled_at is required when status is 'scheduled'", "VALIDATION_ERROR"));
+    }
+
+    // Validate scheduled_at format if provided
+    let scheduled_at = if let Some(ref sat) = req.scheduled_at {
+        if chrono::DateTime::parse_from_rfc3339(sat).is_err() {
+            return Err(err(Status::UnprocessableEntity, "scheduled_at must be a valid ISO-8601 datetime", "VALIDATION_ERROR"));
+        }
+        Some(sat.clone())
+    } else {
+        None
+    };
+
     let published_at: Option<String> = if status == "published" { Some(chrono::Utc::now().to_rfc3339()) } else { None };
 
     conn.execute(
-        "INSERT INTO posts (id, blog_id, title, slug, content, content_html, summary, tags, status, published_at, author_name) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-        rusqlite::params![id, blog_id, title, slug, content, content_html, summary, tags, status, published_at, author_name],
+        "INSERT INTO posts (id, blog_id, title, slug, content, content_html, summary, tags, status, published_at, author_name, scheduled_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+        rusqlite::params![id, blog_id, title, slug, content, content_html, summary, tags, status, published_at, author_name, scheduled_at],
     ).map_err(|e| {
         if e.to_string().contains("UNIQUE") {
             err(Status::Conflict, "A post with this slug already exists", "SLUG_CONFLICT")
@@ -457,7 +475,8 @@ fn query_post(conn: &rusqlite::Connection, post_id: &str) -> Result<PostResponse
         "SELECT p.id, p.blog_id, p.title, p.slug, p.content, p.content_html, p.summary, p.tags, p.status, p.published_at, p.author_name, p.created_at, p.updated_at,
                 (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) as comment_count,
                 (SELECT COUNT(*) FROM post_views v WHERE v.post_id = p.id) as view_count,
-                COALESCE(p.is_pinned, 0) as is_pinned
+                COALESCE(p.is_pinned, 0) as is_pinned,
+                p.scheduled_at
          FROM posts p WHERE p.id = ?1",
         [post_id],
         |row| {
@@ -482,6 +501,7 @@ fn query_post(conn: &rusqlite::Connection, post_id: &str) -> Result<PostResponse
                 reading_time_minutes: compute_reading_time(wc),
                 view_count: row.get(14)?,
                 is_pinned: row.get::<_, i32>(15)? != 0,
+                scheduled_at: row.get(16)?,
             })
         },
     ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))
@@ -500,7 +520,8 @@ pub fn list_posts(blog_id: &str, tag: Option<&str>, limit: Option<i64>, offset: 
         "SELECT p.id, p.blog_id, p.title, p.slug, p.content, p.content_html, p.summary, p.tags, p.status, p.published_at, p.author_name, p.created_at, p.updated_at,
                 (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) as comment_count,
                 (SELECT COUNT(*) FROM post_views v WHERE v.post_id = p.id) as view_count,
-                COALESCE(p.is_pinned, 0) as is_pinned
+                COALESCE(p.is_pinned, 0) as is_pinned,
+                p.scheduled_at
          FROM posts p WHERE p.blog_id = ?1"
     );
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(blog_id.to_string())];
@@ -548,6 +569,7 @@ pub fn list_posts(blog_id: &str, tag: Option<&str>, limit: Option<i64>, offset: 
             reading_time_minutes: compute_reading_time(wc),
             view_count: row.get(14)?,
             is_pinned: row.get::<_, i32>(15)? != 0,
+            scheduled_at: row.get(16)?,
         })
     }).map_err(|e| db_err(&e.to_string()))?
     .filter_map(|r| r.ok())
@@ -563,7 +585,8 @@ pub fn get_post_by_slug(blog_id: &str, slug: &str, client_ip: ClientIp, db: &Sta
         "SELECT p.id, p.blog_id, p.title, p.slug, p.content, p.content_html, p.summary, p.tags, p.status, p.published_at, p.author_name, p.created_at, p.updated_at,
                 (SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id) as comment_count,
                 (SELECT COUNT(*) FROM post_views v WHERE v.post_id = p.id) as view_count,
-                COALESCE(p.is_pinned, 0) as is_pinned
+                COALESCE(p.is_pinned, 0) as is_pinned,
+                p.scheduled_at
          FROM posts p WHERE p.blog_id = ?1 AND p.slug = ?2",
         rusqlite::params![blog_id, slug],
         |row| {
@@ -588,6 +611,7 @@ pub fn get_post_by_slug(blog_id: &str, slug: &str, client_ip: ClientIp, db: &Sta
                 reading_time_minutes: compute_reading_time(wc),
                 view_count: row.get(14)?,
                 is_pinned: row.get::<_, i32>(15)? != 0,
+                scheduled_at: row.get(16)?,
             })
         },
     ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))?;
@@ -608,7 +632,7 @@ pub fn update_post(blog_id: &str, post_id: &str, req: Json<UpdatePostReq>, token
 
     // Get current post
     let current = conn.query_row(
-        "SELECT title, slug, content, summary, tags, status, author_name, published_at FROM posts WHERE id = ?1 AND blog_id = ?2",
+        "SELECT title, slug, content, summary, tags, status, author_name, published_at, scheduled_at FROM posts WHERE id = ?1 AND blog_id = ?2",
         rusqlite::params![post_id, blog_id],
         |row| Ok((
             row.get::<_, String>(0)?,
@@ -619,6 +643,7 @@ pub fn update_post(blog_id: &str, post_id: &str, req: Json<UpdatePostReq>, token
             row.get::<_, String>(5)?,
             row.get::<_, String>(6)?,
             row.get::<_, Option<String>>(7)?,
+            row.get::<_, Option<String>>(8)?,
         )),
     ).map_err(|_| err(Status::NotFound, "Post not found", "NOT_FOUND"))?;
 
@@ -630,6 +655,27 @@ pub fn update_post(blog_id: &str, post_id: &str, req: Json<UpdatePostReq>, token
     let tags = req.tags.as_ref().map(|t| serde_json::to_string(t).unwrap_or_else(|_| "[]".to_string())).unwrap_or(current.4);
     let new_status = req.status.as_deref().unwrap_or(&current.5);
     let author_name = req.author_name.as_deref().unwrap_or(&current.6);
+
+    // Validate scheduled status
+    if new_status == "scheduled" {
+        let will_have_scheduled_at = req.scheduled_at.is_some() || current.8.is_some();
+        if !will_have_scheduled_at {
+            return Err(err(Status::UnprocessableEntity, "scheduled_at is required when status is 'scheduled'", "VALIDATION_ERROR"));
+        }
+    }
+
+    // Handle scheduled_at
+    let scheduled_at = if let Some(ref sat) = req.scheduled_at {
+        if chrono::DateTime::parse_from_rfc3339(sat).is_err() {
+            return Err(err(Status::UnprocessableEntity, "scheduled_at must be a valid ISO-8601 datetime", "VALIDATION_ERROR"));
+        }
+        Some(sat.clone())
+    } else if new_status == "scheduled" {
+        current.8.clone()
+    } else {
+        // Clear scheduled_at when transitioning away from scheduled
+        None
+    };
 
     // Set published_at on first publish
     let published_at = if new_status == "published" && current.7.is_none() {
@@ -644,8 +690,8 @@ pub fn update_post(blog_id: &str, post_id: &str, req: Json<UpdatePostReq>, token
     };
 
     conn.execute(
-        "UPDATE posts SET title=?1, slug=?2, content=?3, content_html=?4, summary=?5, tags=?6, status=?7, published_at=?8, author_name=?9, updated_at=datetime('now') WHERE id=?10 AND blog_id=?11",
-        rusqlite::params![title, slug, content, final_html, summary, tags, new_status, published_at, author_name, post_id, blog_id],
+        "UPDATE posts SET title=?1, slug=?2, content=?3, content_html=?4, summary=?5, tags=?6, status=?7, published_at=?8, author_name=?9, scheduled_at=?10, updated_at=datetime('now') WHERE id=?11 AND blog_id=?12",
+        rusqlite::params![title, slug, content, final_html, summary, tags, new_status, published_at, author_name, scheduled_at, post_id, blog_id],
     ).map_err(|e| {
         if e.to_string().contains("UNIQUE") {
             err(Status::Conflict, "A post with this slug already exists", "SLUG_CONFLICT")
@@ -2181,4 +2227,51 @@ pub fn list_webhook_deliveries(blog_id: &str, webhook_id: &str, limit: Option<i6
 
     let limit = limit.unwrap_or(50).min(100);
     Ok(Json(webhooks::list_deliveries(&conn, webhook_id, blog_id, limit)))
+}
+
+// ─── Post Scheduling ───
+
+#[derive(Serialize)]
+pub struct SchedulePublishResult {
+    pub published_count: usize,
+    pub published_post_ids: Vec<String>,
+}
+
+#[post("/scheduler/publish")]
+pub fn publish_scheduled(db: &State<DbPool>, sem: &State<SemanticIndex>) -> Json<SchedulePublishResult> {
+    let conn = db.conn();
+    let published = crate::db::publish_scheduled_posts(&conn);
+
+    for (post_id, _blog_id) in &published {
+        crate::db::upsert_semantic(&conn, post_id, sem);
+    }
+    drop(conn);
+
+    // Fire webhooks
+    for (post_id, blog_id) in &published {
+        let conn = db.conn();
+        let payload = conn.query_row(
+            "SELECT title, slug, author_name, summary FROM posts WHERE id = ?1",
+            [post_id.as_str()],
+            |row| Ok(serde_json::json!({
+                "post_id": post_id,
+                "title": row.get::<_, String>(0)?,
+                "slug": row.get::<_, String>(1)?,
+                "author_name": row.get::<_, String>(2)?,
+                "summary": row.get::<_, String>(3)?,
+                "scheduled": true
+            })),
+        ).ok();
+        drop(conn);
+
+        if let Some(payload) = payload {
+            webhooks::fire_webhooks(db.inner(), blog_id, "post.published", payload);
+        }
+    }
+
+    let ids: Vec<String> = published.iter().map(|(id, _)| id.clone()).collect();
+    Json(SchedulePublishResult {
+        published_count: ids.len(),
+        published_post_ids: ids,
+    })
 }

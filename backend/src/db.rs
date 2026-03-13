@@ -71,6 +71,15 @@ pub fn initialize(conn: &Connection) {
             .ok();
     }
 
+    // Migration: add scheduled_at column to posts
+    let has_scheduled_at: bool = conn
+        .prepare("SELECT scheduled_at FROM posts LIMIT 0")
+        .is_ok();
+    if !has_scheduled_at {
+        conn.execute_batch("ALTER TABLE posts ADD COLUMN scheduled_at TEXT;")
+            .ok();
+    }
+
     // FTS5 full-text search index
     conn.execute_batch(
         "CREATE VIRTUAL TABLE IF NOT EXISTS posts_fts USING fts5(
@@ -203,4 +212,45 @@ pub fn initialize_webhooks(conn: &Connection) {
         ",
     )
     .expect("Failed to initialize webhooks tables");
+}
+
+// ─── Post Scheduling ───
+
+/// Publish all posts whose scheduled_at time has passed.
+/// Returns a list of (post_id, blog_id) for each post that was published.
+pub fn publish_scheduled_posts(conn: &Connection) -> Vec<(String, String)> {
+    let now = chrono::Utc::now().to_rfc3339();
+
+    // Find all scheduled posts whose time has arrived
+    let mut stmt = conn.prepare(
+        "SELECT id, blog_id, scheduled_at FROM posts WHERE status = 'scheduled' AND scheduled_at <= ?1"
+    ).unwrap_or_else(|_| panic!("Failed to prepare scheduled posts query"));
+
+    let due_posts: Vec<(String, String, String)> = stmt.query_map([&now], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+        ))
+    }).unwrap_or_else(|_| panic!("Failed to query scheduled posts"))
+    .filter_map(|r| r.ok())
+    .collect();
+
+    let mut published = Vec::new();
+
+    for (post_id, blog_id, scheduled_at) in &due_posts {
+        // Transition: scheduled → published, set published_at to scheduled_at
+        let updated = conn.execute(
+            "UPDATE posts SET status = 'published', published_at = ?1, updated_at = datetime('now') WHERE id = ?2 AND status = 'scheduled'",
+            rusqlite::params![scheduled_at, post_id],
+        ).unwrap_or(0);
+
+        if updated > 0 {
+            // Update FTS index
+            upsert_fts(conn, post_id);
+            published.push((post_id.clone(), blog_id.clone()));
+        }
+    }
+
+    published
 }

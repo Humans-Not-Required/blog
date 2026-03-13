@@ -7,6 +7,7 @@ pub mod auth;
 pub mod rate_limit;
 pub mod semantic;
 pub mod webhooks;
+pub mod scheduler;
 
 pub type DbPool = std::sync::Mutex<rusqlite::Connection>;
 
@@ -85,6 +86,7 @@ pub fn create_rocket(conn: rusqlite::Connection) -> rocket::Rocket<rocket::Build
             routes::get_webhook_route,
             routes::delete_webhook_route,
             routes::list_webhook_deliveries,
+            routes::publish_scheduled,
         ])
         .mount("/", routes![routes::skill_md, routes::llms_txt, routes::skills_index, routes::skills_skill_md, routes::sitemap_xml, routes::robots_txt])
         .mount("/", routes![routes::spa_fallback])

@@ -275,6 +275,7 @@ class Blog:
         tags: Optional[List[str]] = None,
         status: str = "published",
         summary: Optional[str] = None,
+        scheduled_at: Optional[str] = None,
         manage_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """``POST /api/v1/blogs/{id}/posts`` — create a post.
@@ -292,6 +293,8 @@ class Blog:
             body["tags"] = tags
         if summary is not None:
             body["summary"] = summary
+        if scheduled_at is not None:
+            body["scheduled_at"] = scheduled_at
         return self._request(
             "POST", f"/api/v1/blogs/{blog_id}/posts",
             json_body=body, manage_key=manage_key,
@@ -326,6 +329,7 @@ class Blog:
         tags: Optional[List[str]] = None,
         status: Optional[str] = None,
         summary: Optional[str] = None,
+        scheduled_at: Optional[str] = None,
         manage_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """``PATCH /api/v1/blogs/{id}/posts/{post_id}`` — update a post. Auth required."""
@@ -340,10 +344,17 @@ class Blog:
             body["status"] = status
         if summary is not None:
             body["summary"] = summary
+        if scheduled_at is not None:
+            body["scheduled_at"] = scheduled_at
         return self._request(
             "PATCH", f"/api/v1/blogs/{blog_id}/posts/{post_id}",
             json_body=body, manage_key=manage_key,
         )
+
+
+    def publish_scheduled(self) -> Dict[str, Any]:
+        """``POST /api/v1/scheduler/publish`` — trigger publishing of due scheduled posts."""
+        return self._request("POST", "/api/v1/scheduler/publish")
 
     def delete_post(
         self,

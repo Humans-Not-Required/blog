@@ -9,6 +9,7 @@ mod auth;
 mod rate_limit;
 mod semantic;
 mod webhooks;
+mod scheduler;
 
 pub type DbPool = Mutex<rusqlite::Connection>;
 
@@ -56,6 +57,7 @@ fn rocket() -> _ {
             comment_creation: comment_limiter,
         })
         .attach(cors)
+        .attach(scheduler::PostScheduler)
         .mount("/api/v1", routes![
             routes::health,
             routes::openapi,
@@ -95,6 +97,7 @@ fn rocket() -> _ {
             routes::get_webhook_route,
             routes::delete_webhook_route,
             routes::list_webhook_deliveries,
+            routes::publish_scheduled,
         ])
         .mount("/", routes![routes::skill_md, routes::llms_txt, routes::skills_index, routes::skills_skill_md, routes::sitemap_xml, routes::robots_txt])
         .mount("/", rocket::fs::FileServer::from(static_dir).rank(20))

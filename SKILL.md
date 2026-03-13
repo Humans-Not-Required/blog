@@ -94,6 +94,46 @@ GET /api/v1/blogs/{id}/posts/{slug}/export/html      — self-contained dark-the
 GET /api/v1/blogs/{id}/posts/{slug}/export/nostr     — unsigned NIP-23 kind 30023 event template
 ```
 
+
+## Post Scheduling
+
+Schedule posts to auto-publish at a future time:
+
+```
+# Create a scheduled post
+POST /api/v1/blogs/{id}/posts
+Body: {"title": "...", "content": "...", "status": "scheduled", "scheduled_at": "2026-03-15T09:00:00+00:00"}
+
+# Reschedule via update
+PATCH /api/v1/blogs/{id}/posts/{post_id}
+Body: {"scheduled_at": "2026-03-16T12:00:00+00:00"}
+
+# Manually trigger publishing of due posts
+POST /api/v1/scheduler/publish
+```
+
+- Scheduled posts are hidden from public listings, feeds, and search
+- Background task auto-publishes every 60s
+- `published_at` is set to `scheduled_at` when published
+- Webhooks fire with `post.published` event
+
+## Webhooks
+
+Subscribe to blog events:
+
+```
+POST /api/v1/blogs/{id}/webhooks
+Body: {"url": "https://...", "events": ["post.published", "post.updated", "post.deleted", "comment.created"]}
+
+GET  /api/v1/blogs/{id}/webhooks                   — list webhooks (manage_key)
+GET  /api/v1/blogs/{id}/webhooks/{id}              — get webhook (manage_key)
+DELETE /api/v1/blogs/{id}/webhooks/{id}            — delete webhook (manage_key)
+GET  /api/v1/blogs/{id}/webhooks/{id}/deliveries   — delivery history (manage_key)
+```
+
+- HMAC-SHA256 signing via optional `secret` field
+- Max 10 webhooks per blog
+- Fire-and-forget async delivery (10s timeout)
 ## Utility
 
 ```

@@ -5062,3 +5062,294 @@ fn test_webhook_all_valid_events() {
     let body: serde_json::Value = resp.into_json().unwrap();
     assert_eq!(body["events"].as_array().unwrap().len(), 4);
 }
+
+// ─── Post Scheduling Tests ───
+
+#[test]
+fn test_create_scheduled_post() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Schedule Blog");
+
+    let future_time = "2099-01-01T00:00:00+00:00";
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(format!(r#"{{"title": "Future Post", "content": "Coming soon", "status": "scheduled", "scheduled_at": "{}"}}"#, future_time))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["status"], "scheduled");
+    assert_eq!(body["scheduled_at"], future_time);
+    assert!(body["published_at"].is_null());
+}
+
+#[test]
+fn test_scheduled_post_requires_scheduled_at() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Schedule Blog");
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Missing Time", "status": "scheduled"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::UnprocessableEntity);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert!(body["error"].as_str().unwrap().contains("scheduled_at"));
+}
+
+#[test]
+fn test_scheduled_post_invalid_datetime() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Schedule Blog");
+
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Bad Time", "status": "scheduled", "scheduled_at": "not-a-date"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::UnprocessableEntity);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert!(body["error"].as_str().unwrap().contains("ISO-8601"));
+}
+
+#[test]
+fn test_scheduled_post_hidden_from_public() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Schedule Blog");
+
+    // Create a scheduled post
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Hidden Post", "content": "Secret", "status": "scheduled", "scheduled_at": "2099-01-01T00:00:00+00:00"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+
+    // Public listing should not include it
+    let resp = client.get(format!("/api/v1/blogs/{}/posts", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts.len(), 0);
+
+    // With manage key, should be visible
+    let resp = client.get(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts.len(), 1);
+    assert_eq!(posts[0]["status"], "scheduled");
+}
+
+#[test]
+fn test_publish_scheduled_posts_endpoint() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Schedule Blog");
+
+    // Create a post scheduled in the past (should be published immediately)
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Past Due", "content": "Should publish", "status": "scheduled", "scheduled_at": "2020-01-01T00:00:00+00:00"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let created: serde_json::Value = resp.into_json().unwrap();
+    let post_id = created["id"].as_str().unwrap().to_string();
+
+    // Trigger the scheduler
+    let resp = client.post("/api/v1/scheduler/publish").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let result: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(result["published_count"], 1);
+    assert!(result["published_post_ids"].as_array().unwrap().contains(&serde_json::Value::String(post_id.clone())));
+
+    // Post should now be published
+    let resp = client.get(format!("/api/v1/blogs/{}/posts", blog_id)).dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts.len(), 1);
+    assert_eq!(posts[0]["status"], "published");
+    assert!(posts[0]["published_at"].is_string());
+}
+
+#[test]
+fn test_publish_scheduled_no_future_posts() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Schedule Blog");
+
+    // Create a post scheduled far in the future
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Future Post", "content": "Not yet", "status": "scheduled", "scheduled_at": "2099-12-31T23:59:59+00:00"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+
+    // Trigger scheduler - should publish nothing
+    let resp = client.post("/api/v1/scheduler/publish").dispatch();
+    let result: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(result["published_count"], 0);
+
+    // Post should still be scheduled
+    let resp = client.get(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts.len(), 1);
+    assert_eq!(posts[0]["status"], "scheduled");
+}
+
+#[test]
+fn test_update_post_to_scheduled() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Schedule Blog");
+
+    // Create a draft post
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Draft First"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let created: serde_json::Value = resp.into_json().unwrap();
+    let post_id = created["id"].as_str().unwrap();
+
+    // Update to scheduled
+    let resp = client.patch(format!("/api/v1/blogs/{}/posts/{}", blog_id, post_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"status": "scheduled", "scheduled_at": "2099-06-15T12:00:00+00:00"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["status"], "scheduled");
+    assert_eq!(body["scheduled_at"], "2099-06-15T12:00:00+00:00");
+}
+
+#[test]
+fn test_update_scheduled_to_draft_clears_scheduled_at() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Schedule Blog");
+
+    // Create a scheduled post
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Scheduled Post", "status": "scheduled", "scheduled_at": "2099-01-01T00:00:00+00:00"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let created: serde_json::Value = resp.into_json().unwrap();
+    let post_id = created["id"].as_str().unwrap();
+
+    // Change back to draft
+    let resp = client.patch(format!("/api/v1/blogs/{}/posts/{}", blog_id, post_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"status": "draft"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["status"], "draft");
+    assert!(body["scheduled_at"].is_null());
+}
+
+#[test]
+fn test_scheduled_post_not_in_feeds() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Feed Blog");
+
+    // Make blog public
+    client.patch(format!("/api/v1/blogs/{}", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"is_public": true}"#)
+        .dispatch();
+
+    // Create a scheduled post
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Scheduled Feed Post", "content": "Not in feed", "status": "scheduled", "scheduled_at": "2099-01-01T00:00:00+00:00"}"#)
+        .dispatch();
+
+    // RSS feed should be empty
+    let resp = client.get(format!("/api/v1/blogs/{}/feed.rss", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    assert!(!body.contains("Scheduled Feed Post"));
+
+    // Recent posts should be empty
+    let resp = client.get("/api/v1/posts/recent").dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert!(posts.iter().all(|p| p["title"] != "Scheduled Feed Post"));
+}
+
+#[test]
+fn test_scheduled_post_not_in_search() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Search Blog");
+
+    // Create a scheduled post
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Unique Searchable Zebra", "content": "Zebra content", "status": "scheduled", "scheduled_at": "2099-01-01T00:00:00+00:00"}"#)
+        .dispatch();
+
+    // FTS search should not find it
+    let resp = client.get(format!("/api/v1/search?q=Zebra")).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let results: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(results.len(), 0);
+}
+
+#[test]
+fn test_published_at_set_to_scheduled_at_on_publish() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Schedule Blog");
+
+    let scheduled_time = "2020-06-15T10:30:00+00:00";
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(format!(r#"{{"title": "Timed Post", "content": "Content", "status": "scheduled", "scheduled_at": "{}"}}"#, scheduled_time))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+
+    // Trigger scheduler
+    let resp = client.post("/api/v1/scheduler/publish").dispatch();
+    let result: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(result["published_count"], 1);
+
+    // published_at should be the scheduled_at time
+    let resp = client.get(format!("/api/v1/blogs/{}/posts", blog_id)).dispatch();
+    let posts: Vec<serde_json::Value> = resp.into_json().unwrap();
+    assert_eq!(posts[0]["published_at"], scheduled_time);
+}
+
+#[test]
+fn test_update_scheduled_time() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Schedule Blog");
+
+    // Create scheduled post
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Rescheduled", "status": "scheduled", "scheduled_at": "2099-01-01T00:00:00+00:00"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let created: serde_json::Value = resp.into_json().unwrap();
+    let post_id = created["id"].as_str().unwrap();
+
+    // Update just the scheduled_at
+    let new_time = "2099-06-01T08:00:00+00:00";
+    let resp = client.patch(format!("/api/v1/blogs/{}/posts/{}", blog_id, post_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(format!(r#"{{"scheduled_at": "{}"}}"#, new_time))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["scheduled_at"], new_time);
+}

@@ -1459,6 +1459,40 @@
           }
         }
       }
+    },
+    "/api/v1/scheduler/publish": {
+      "post": {
+        "tags": [
+          "Scheduling"
+        ],
+        "summary": "Trigger publishing of scheduled posts",
+        "description": "Publishes all posts whose scheduled_at time has passed. Returns the list of published post IDs. The server also runs this automatically every 60 seconds.",
+        "responses": {
+          "200": {
+            "description": "Scheduled posts published",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "published_count": {
+                      "type": "integer",
+                      "description": "Number of posts published"
+                    },
+                    "published_post_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "IDs of posts that were published"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1621,7 +1655,8 @@
             "type": "string",
             "enum": [
               "draft",
-              "published"
+              "published",
+              "scheduled"
             ]
           },
           "published_at": {
@@ -1658,6 +1693,12 @@
           "is_pinned": {
             "type": "boolean",
             "description": "Whether the post is pinned to the top of the blog"
+          },
+          "scheduled_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "ISO-8601 datetime when the post is scheduled to be published (null if not scheduled)"
           }
         }
       },
@@ -1688,7 +1729,8 @@
             "type": "string",
             "enum": [
               "draft",
-              "published"
+              "published",
+              "scheduled"
             ],
             "default": "draft"
           },
@@ -1698,6 +1740,11 @@
           },
           "author_name": {
             "type": "string"
+          },
+          "scheduled_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO-8601 datetime for scheduled publishing (required when status is 'scheduled')"
           }
         }
       },
@@ -1723,7 +1770,8 @@
             "type": "string",
             "enum": [
               "draft",
-              "published"
+              "published",
+              "scheduled"
             ]
           },
           "slug": {
@@ -1731,6 +1779,11 @@
           },
           "author_name": {
             "type": "string"
+          },
+          "scheduled_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO-8601 datetime for scheduled publishing"
           }
         }
       },

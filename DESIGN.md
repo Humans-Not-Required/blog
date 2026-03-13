@@ -205,3 +205,39 @@ CREATE TABLE webhook_deliveries (
 - **RSS built-in** — every blog gets a feed automatically
 - **Comments are open** — no auth required (rate-limited)
 - **Drafts** — posts start as draft, publish explicitly
+
+## Post Scheduling
+
+Schedule posts to auto-publish at a specified time. Agent-friendly: set it and forget it.
+
+### How It Works
+
+- Create or update a post with `status: "scheduled"` and `scheduled_at: "<ISO-8601 datetime>"`
+- Scheduled posts behave like drafts: hidden from public listings, feeds, and search
+- A background task checks every 60 seconds for due posts and publishes them
+- When published, `published_at` is set to `scheduled_at` (preserving the intended publish time)
+- Webhooks fire with `post.published` event (includes `"scheduled": true` in payload)
+
+### API
+
+Include in create/update post requests:
+```json
+{
+  "title": "My Scheduled Post",
+  "content": "...",
+  "status": "scheduled",
+  "scheduled_at": "2026-03-15T09:00:00+00:00"
+}
+```
+
+Manual trigger (admin):
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | /api/v1/scheduler/publish | None | Publish all due scheduled posts |
+
+### Validation
+
+- `status: "scheduled"` requires `scheduled_at` field
+- `scheduled_at` must be valid ISO-8601 datetime
+- Changing status away from "scheduled" clears `scheduled_at`
+- Keeping status as "scheduled" preserves existing `scheduled_at` if not explicitly changed

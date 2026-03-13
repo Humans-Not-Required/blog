@@ -1502,3 +1502,62 @@ class TestWebhookCRUD:
         blog_id, _ = blog
         with pytest.raises(BlogError):
             client.list_webhooks(blog_id)
+
+
+# ─── Post Scheduling Tests ───
+
+class TestPostScheduling(WriteTestCase):
+    def test_create_scheduled_post(self):
+        post = self.b.create_post(
+            self.blog_id, "Future Post", "Coming soon",
+            status="scheduled",
+            scheduled_at="2099-01-01T00:00:00+00:00",
+        )
+        self.assertEqual(post["status"], "scheduled")
+        self.assertEqual(post["scheduled_at"], "2099-01-01T00:00:00+00:00")
+        self.assertIsNone(post.get("published_at"))
+
+    def test_scheduled_requires_scheduled_at(self):
+        with self.assertRaises(Exception):
+            self.b.create_post(
+                self.blog_id, "No Time", "Missing",
+                status="scheduled",
+            )
+
+    def test_publish_scheduled_posts(self):
+        post = self.b.create_post(
+            self.blog_id, "Past Due", "Should publish",
+            status="scheduled",
+            scheduled_at="2020-01-01T00:00:00+00:00",
+        )
+        self.assertEqual(post["status"], "scheduled")
+
+        # Trigger scheduler
+        result = self.b.publish_scheduled()
+        self.assertGreaterEqual(result["published_count"], 1)
+        self.assertIn(post["id"], result["published_post_ids"])
+
+    def test_update_to_scheduled(self):
+        post = self.b.create_post(
+            self.blog_id, "Draft First", "Content",
+            status="draft",
+        )
+        updated = self.b.update_post(
+            self.blog_id, post["id"],
+            status="scheduled",
+            scheduled_at="2099-06-15T12:00:00+00:00",
+        )
+        self.assertEqual(updated["status"], "scheduled")
+        self.assertEqual(updated["scheduled_at"], "2099-06-15T12:00:00+00:00")
+
+    def test_scheduled_post_hidden_from_public(self):
+        self.b.create_post(
+            self.blog_id, "Hidden", "Secret",
+            status="scheduled",
+            scheduled_at="2099-01-01T00:00:00+00:00",
+        )
+        # Public list should be empty (only scheduled posts in this fresh blog)
+        no_auth_client = Blog(BASE_URL)
+        posts = no_auth_client.list_posts(self.blog_id)
+        scheduled_posts = [p for p in posts if p["status"] == "scheduled"]
+        self.assertEqual(len(scheduled_posts), 0)
