@@ -249,6 +249,18 @@ class Blog:
             manage_key=manage_key,
         )
 
+    def rotate_key(
+        self,
+        blog_id: str,
+        *,
+        manage_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """"POST /api/v1/blogs/{id}/rotate-key" — rotate manage key. Old key is invalidated. Auth required."""
+        return self._request(
+            "POST", f"/api/v1/blogs/{blog_id}/rotate-key",
+            manage_key=manage_key,
+        )
+
     # ------------------------------------------------------------------
     # Posts
     # ------------------------------------------------------------------

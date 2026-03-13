@@ -1369,6 +1369,39 @@ class TestDeleteBlog(unittest.TestCase):
             self.b.delete_blog(blog["id"], manage_key=key)
 
 
+    # ── Key Rotation ──
+
+    def test_rotate_key_success(self):
+        blog = self.b.create_blog(f"RotateKey-{ts()}")
+        key = blog["manage_key"]
+        result = self.b.rotate_key(blog["id"], manage_key=key)
+        self.assertIn("manage_key", result)
+        self.assertTrue(result["manage_key"].startswith("blog_"))
+        self.assertNotEqual(result["manage_key"], key)
+        self.assertEqual(result["blog_id"], blog["id"])
+        # Clean up with new key
+        self.b.delete_blog(blog["id"], manage_key=result["manage_key"])
+
+    def test_rotate_key_old_key_invalid(self):
+        blog = self.b.create_blog(f"RotateOld-{ts()}")
+        old_key = blog["manage_key"]
+        result = self.b.rotate_key(blog["id"], manage_key=old_key)
+        new_key = result["manage_key"]
+        # Old key should fail
+        with self.assertRaises(AuthError):
+            self.b.rotate_key(blog["id"], manage_key=old_key)
+        # New key should work
+        self.b.delete_blog(blog["id"], manage_key=new_key)
+
+    def test_rotate_key_no_auth(self):
+        blog = self.b.create_blog(f"RotateNoAuth-{ts()}")
+        key = blog["manage_key"]
+        no_auth = Blog(BASE_URL)
+        with self.assertRaises(AuthError):
+            no_auth.rotate_key(blog["id"])
+        self.b.delete_blog(blog["id"], manage_key=key)
+
+
 if __name__ == "__main__":
     print(f"\n📝 Blog Python SDK Tests")
     print(f"   Server: {BASE_URL}")

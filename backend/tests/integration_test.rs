@@ -4660,3 +4660,124 @@ fn test_blog_list_pagination_offset() {
     let first_page: Vec<serde_json::Value> = resp.into_json().unwrap();
     assert_ne!(first_page[0]["id"], page[0]["id"]);
 }
+
+// ─── Key Rotation Tests ───
+
+#[test]
+fn test_rotate_key_requires_auth() {
+    let client = test_client();
+    let (id, _key) = create_blog_helper(&client, "Rotate Auth Test");
+    let resp = client.post(format!("/api/v1/blogs/{}/rotate-key", id)).dispatch();
+    assert_eq!(resp.status(), Status::Unauthorized);
+}
+
+#[test]
+fn test_rotate_key_wrong_key() {
+    let client = test_client();
+    let (id, _key) = create_blog_helper(&client, "Rotate Wrong Key");
+    let resp = client.post(format!("/api/v1/blogs/{}/rotate-key", id))
+        .header(Header::new("Authorization", "Bearer blog_wrongkey"))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Unauthorized);
+}
+
+#[test]
+fn test_rotate_key_success() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Rotate Success");
+
+    // Rotate
+    let resp = client.post(format!("/api/v1/blogs/{}/rotate-key", id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let new_key = body["manage_key"].as_str().unwrap();
+    assert!(new_key.starts_with("blog_"));
+    assert_ne!(new_key, key);
+    assert_eq!(body["blog_id"], id);
+    assert!(body["message"].as_str().unwrap().contains("rotated"));
+}
+
+#[test]
+fn test_rotate_key_old_key_invalid() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Rotate Old Invalid");
+
+    // Rotate to get new key
+    let resp = client.post(format!("/api/v1/blogs/{}/rotate-key", id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let new_key = body["manage_key"].as_str().unwrap().to_string();
+
+    // Old key should fail
+    let resp = client.patch(format!("/api/v1/blogs/{}", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"name": "Should Fail"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Unauthorized);
+
+    // New key should work
+    let resp = client.patch(format!("/api/v1/blogs/{}", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", new_key)))
+        .body(r#"{"name": "Should Work"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["name"], "Should Work");
+}
+
+#[test]
+fn test_rotate_key_nonexistent_blog() {
+    let client = test_client();
+    let resp = client.post("/api/v1/blogs/nonexistent-id/rotate-key")
+        .header(Header::new("Authorization", "Bearer blog_somekey"))
+        .dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+}
+
+#[test]
+fn test_rotate_key_twice() {
+    let client = test_client();
+    let (id, key1) = create_blog_helper(&client, "Rotate Twice");
+
+    // First rotation
+    let resp = client.post(format!("/api/v1/blogs/{}/rotate-key", id))
+        .header(Header::new("Authorization", format!("Bearer {}", key1)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let key2 = body["manage_key"].as_str().unwrap().to_string();
+
+    // Second rotation with key2
+    let resp = client.post(format!("/api/v1/blogs/{}/rotate-key", id))
+        .header(Header::new("Authorization", format!("Bearer {}", key2)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let key3 = body["manage_key"].as_str().unwrap().to_string();
+
+    // key1 and key2 should fail, key3 should work
+    assert_ne!(key2, key3);
+    let resp = client.post(format!("/api/v1/blogs/{}/rotate-key", id))
+        .header(Header::new("Authorization", format!("Bearer {}", key1)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Unauthorized);
+
+    let resp = client.post(format!("/api/v1/blogs/{}/rotate-key", id))
+        .header(Header::new("Authorization", format!("Bearer {}", key2)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Unauthorized);
+
+    // key3 works for update
+    let resp = client.patch(format!("/api/v1/blogs/{}", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key3)))
+        .body(r#"{"name": "Third Key Works"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+}

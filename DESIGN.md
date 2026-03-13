@@ -67,6 +67,7 @@ CREATE TABLE comments (
 | GET | /api/v1/blogs | None | List public blogs (?limit, ?offset) |
 | GET | /api/v1/blogs/:id | None | Get blog details |
 | PATCH | /api/v1/blogs/:id | manage_key | Update blog name/description/public |
+| POST | /api/v1/blogs/:id/rotate-key | manage_key | Rotate manage key (old key invalidated) |
 
 ### Posts
 | Method | Path | Auth | Description |

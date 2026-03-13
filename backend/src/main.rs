@@ -63,6 +63,7 @@ fn rocket() -> _ {
             routes::get_blog,
             routes::update_blog,
             routes::delete_blog,
+            routes::rotate_key,
             routes::create_post,
             routes::list_posts,
             routes::get_post_by_slug,

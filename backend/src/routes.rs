@@ -368,6 +368,35 @@ pub fn delete_blog(blog_id: &str, token: BlogToken, db: &State<DbPool>, sem: &St
     Ok(Json(serde_json::json!({"deleted": true, "posts_removed": post_ids.len()})))
 }
 
+// ─── Key Rotation ───
+
+#[derive(Serialize)]
+pub struct KeyRotated {
+    pub blog_id: String,
+    pub manage_key: String,
+    pub message: String,
+}
+
+#[post("/blogs/<blog_id>/rotate-key")]
+pub fn rotate_key(blog_id: &str, token: BlogToken, db: &State<DbPool>) -> Result<Json<KeyRotated>, (Status, Json<ApiError>)> {
+    let conn = db.conn();
+    verify_blog_key(&conn, blog_id, &token)?;
+
+    let new_key = generate_key("blog");
+    let new_hash = hash_key(&new_key);
+
+    conn.execute(
+        "UPDATE blogs SET manage_key_hash = ?1, updated_at = datetime('now') WHERE id = ?2",
+        rusqlite::params![new_hash, blog_id],
+    ).map_err(|e| db_err(&e.to_string()))?;
+
+    Ok(Json(KeyRotated {
+        blog_id: blog_id.to_string(),
+        manage_key: new_key,
+        message: "Key rotated successfully. Save the new key — the old key is now invalid.".to_string(),
+    }))
+}
+
 #[post("/blogs/<blog_id>/posts", format = "json", data = "<req>")]
 pub fn create_post(blog_id: &str, req: Json<CreatePostReq>, token: BlogToken, db: &State<DbPool>, sem: &State<SemanticIndex>) -> Result<(Status, Json<PostResponse>), (Status, Json<ApiError>)> {
     let conn = db.conn();

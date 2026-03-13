@@ -1090,6 +1090,67 @@
           }
         }
       }
+    },
+    "/blogs/{blogId}/rotate-key": {
+      "post": {
+        "summary": "Rotate manage key",
+        "description": "Generate a new manage key for the blog. The old key is immediately invalidated. Save the new key \u2014 it is shown only once.",
+        "operationId": "rotateKey",
+        "tags": [
+          "Blogs"
+        ],
+        "parameters": [
+          {
+            "name": "blogId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyHeader": []
+          },
+          {
+            "apiKeyQuery": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Key rotated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "blog_id": {
+                      "type": "string"
+                    },
+                    "manage_key": {
+                      "type": "string",
+                      "description": "New manage key (shown once)"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
     }
   },
   "components": {
