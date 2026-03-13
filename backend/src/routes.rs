@@ -7,6 +7,7 @@ use crate::auth::{BlogToken, generate_key, hash_key};
 use crate::rate_limit::{ClientIp, RateLimiter};
 use crate::semantic::SemanticIndex;
 use crate::{DbPool, DbPoolExt};
+use crate::webhooks;
 
 type ContentResult = Result<(Status, (rocket::http::ContentType, String)), (Status, Json<ApiError>)>;
 
@@ -433,7 +434,22 @@ pub fn create_post(blog_id: &str, req: Json<CreatePostReq>, token: BlogToken, db
     crate::db::upsert_semantic(&conn, &id, sem);
 
     let post = query_post(&conn, &id)?;
+    drop(conn);
+
+    // Fire webhooks if published
+    if status == "published" {
+        webhooks::fire_webhooks(db.inner(), blog_id, "post.published", serde_json::json!({
+            "post_id": post.id,
+            "title": post.title,
+            "slug": post.slug,
+            "author_name": post.author_name,
+            "summary": post.summary
+        }));
+    }
+
     Ok((Status::Created, Json(post)))
+
+
 }
 
 fn query_post(conn: &rusqlite::Connection, post_id: &str) -> Result<PostResponse, (Status, Json<ApiError>)> {
@@ -643,6 +659,21 @@ pub fn update_post(blog_id: &str, post_id: &str, req: Json<UpdatePostReq>, token
     crate::db::upsert_semantic(&conn, post_id, sem);
 
     let post = query_post(&conn, post_id)?;
+    let old_status = &current.5;
+    drop(conn);
+
+    // Fire webhooks
+    if new_status == "published" {
+        let evt = if old_status == "published" { "post.updated" } else { "post.published" };
+        webhooks::fire_webhooks(db.inner(), blog_id, evt, serde_json::json!({
+            "post_id": post.id,
+            "title": post.title,
+            "slug": post.slug,
+            "author_name": post.author_name,
+            "summary": post.summary
+        }));
+    }
+
     Ok(Json(post))
 }
 
@@ -666,6 +697,13 @@ pub fn delete_post(blog_id: &str, post_id: &str, token: BlogToken, db: &State<Db
     // Remove from FTS + semantic index
     crate::db::delete_fts(&conn, post_id);
     crate::db::delete_semantic(post_id, sem);
+
+    drop(conn);
+
+    // Fire webhook
+    webhooks::fire_webhooks(db.inner(), blog_id, "post.deleted", serde_json::json!({
+        "post_id": post_id
+    }));
 
     Ok(Json(serde_json::json!({"deleted": true})))
 }
@@ -707,6 +745,16 @@ pub fn create_comment(blog_id: &str, post_id: &str, req: Json<CreateCommentReq>,
             created_at: row.get(4)?,
         }),
     ).map_err(|e| db_err(&e.to_string()))?;
+
+    drop(conn);
+
+    // Fire webhook
+    webhooks::fire_webhooks(db.inner(), blog_id, "comment.created", serde_json::json!({
+        "post_id": post_id,
+        "comment_id": comment.id,
+        "author_name": comment.author_name,
+        "content": comment.content
+    }));
 
     Ok((Status::Created, Json(comment)))
 }
@@ -2060,4 +2108,77 @@ pub fn too_many_requests() -> Json<ApiError> {
 #[catch(500)]
 pub fn internal_error() -> Json<ApiError> {
     Json(ApiError { error: "Internal server error".to_string(), code: "INTERNAL_ERROR".to_string() })
+}
+
+// ─── Webhook Routes ───
+
+
+#[post("/blogs/<blog_id>/webhooks", format = "json", data = "<req>")]
+pub fn create_webhook(blog_id: &str, req: Json<webhooks::CreateWebhookReq>, token: BlogToken, db: &State<DbPool>) -> Result<(Status, Json<webhooks::WebhookResponse>), (Status, Json<ApiError>)> {
+    let conn = db.conn();
+    verify_blog_key(&conn, blog_id, &token)?;
+
+    // Validate URL
+    webhooks::validate_url(&req.url).map_err(|e: String| err(Status::UnprocessableEntity, &e, "VALIDATION_ERROR"))?;
+
+    // Validate events
+    webhooks::validate_events(&req.events).map_err(|e: String| err(Status::UnprocessableEntity, &e, "VALIDATION_ERROR"))?;
+
+    // Limit webhooks per blog (max 10)
+    let count = webhooks::count_webhooks(&conn, blog_id);
+    if count >= 10 {
+        return Err(err(Status::UnprocessableEntity, "Maximum 10 webhooks per blog", "LIMIT_EXCEEDED"));
+    }
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let wh = webhooks::create_webhook(&conn, &id, blog_id, &req.url, &req.events, req.secret.as_deref())
+        .map_err(|e: String| err(Status::InternalServerError, &e, "DB_ERROR"))?;
+
+    Ok((Status::Created, Json(wh)))
+}
+
+#[get("/blogs/<blog_id>/webhooks")]
+pub fn list_webhooks(blog_id: &str, token: Option<BlogToken>, db: &State<DbPool>) -> Result<Json<Vec<webhooks::WebhookResponse>>, (Status, Json<ApiError>)> {
+    let token = token.ok_or_else(|| err(Status::Unauthorized, "Manage key required", "UNAUTHORIZED"))?;
+    let conn = db.conn();
+    verify_blog_key(&conn, blog_id, &token)?;
+    Ok(Json(webhooks::list_webhooks(&conn, blog_id)))
+}
+
+#[delete("/blogs/<blog_id>/webhooks/<webhook_id>")]
+pub fn delete_webhook_route(blog_id: &str, webhook_id: &str, token: BlogToken, db: &State<DbPool>) -> Result<Json<serde_json::Value>, (Status, Json<ApiError>)> {
+    let conn = db.conn();
+    verify_blog_key(&conn, blog_id, &token)?;
+
+    if webhooks::delete_webhook(&conn, webhook_id, blog_id) {
+        Ok(Json(serde_json::json!({"deleted": true})))
+    } else {
+        Err(err(Status::NotFound, "Webhook not found", "NOT_FOUND"))
+    }
+}
+
+#[get("/blogs/<blog_id>/webhooks/<webhook_id>")]
+pub fn get_webhook_route(blog_id: &str, webhook_id: &str, token: Option<BlogToken>, db: &State<DbPool>) -> Result<Json<webhooks::WebhookResponse>, (Status, Json<ApiError>)> {
+    let token = token.ok_or_else(|| err(Status::Unauthorized, "Manage key required", "UNAUTHORIZED"))?;
+    let conn = db.conn();
+    verify_blog_key(&conn, blog_id, &token)?;
+
+    webhooks::get_webhook(&conn, webhook_id, blog_id)
+        .map(Json)
+        .ok_or_else(|| err(Status::NotFound, "Webhook not found", "NOT_FOUND"))
+}
+
+#[get("/blogs/<blog_id>/webhooks/<webhook_id>/deliveries?<limit>")]
+pub fn list_webhook_deliveries(blog_id: &str, webhook_id: &str, limit: Option<i64>, token: Option<BlogToken>, db: &State<DbPool>) -> Result<Json<Vec<webhooks::WebhookDeliveryResponse>>, (Status, Json<ApiError>)> {
+    let token = token.ok_or_else(|| err(Status::Unauthorized, "Manage key required", "UNAUTHORIZED"))?;
+    let conn = db.conn();
+    verify_blog_key(&conn, blog_id, &token)?;
+
+    // Verify webhook exists and belongs to this blog
+    if webhooks::get_webhook(&conn, webhook_id, blog_id).is_none() {
+        return Err(err(Status::NotFound, "Webhook not found", "NOT_FOUND"));
+    }
+
+    let limit = limit.unwrap_or(50).min(100);
+    Ok(Json(webhooks::list_deliveries(&conn, webhook_id, blog_id, limit)))
 }

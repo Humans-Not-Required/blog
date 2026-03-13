@@ -88,6 +88,7 @@ pub fn initialize(conn: &Connection) {
 
     // Rebuild FTS index from existing posts (idempotent — clears and repopulates)
     rebuild_fts_index(conn);
+    initialize_webhooks(conn);
 }
 
 /// Rebuild the FTS5 index from the posts table. Called on startup.
@@ -170,4 +171,36 @@ pub fn upsert_semantic(conn: &Connection, post_id: &str, index: &SemanticIndex) 
 /// Remove a post from the semantic index.
 pub fn delete_semantic(post_id: &str, index: &SemanticIndex) {
     index.remove(post_id);
+}
+
+// ─── Webhooks ───
+
+pub fn initialize_webhooks(conn: &Connection) {
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS webhooks (
+            id TEXT PRIMARY KEY,
+            blog_id TEXT NOT NULL REFERENCES blogs(id) ON DELETE CASCADE,
+            url TEXT NOT NULL,
+            events TEXT NOT NULL DEFAULT '[]',
+            secret TEXT DEFAULT NULL,
+            is_active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_webhooks_blog_id ON webhooks(blog_id);
+
+        CREATE TABLE IF NOT EXISTS webhook_deliveries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            webhook_id TEXT NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
+            event TEXT NOT NULL,
+            status_code INTEGER,
+            success INTEGER DEFAULT 0,
+            error TEXT DEFAULT NULL,
+            delivered_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_webhook_id ON webhook_deliveries(webhook_id);
+        CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_delivered_at ON webhook_deliveries(delivered_at);
+        ",
+    )
+    .expect("Failed to initialize webhooks tables");
 }

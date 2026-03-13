@@ -497,6 +497,84 @@ class Blog:
         """``GET /api/v1/blogs/{id}/posts/{slug}/export/nostr`` — Nostr NIP-23 event."""
         return self._request("GET", f"/api/v1/blogs/{blog_id}/posts/{slug}/export/nostr")
 
+
+    # ------------------------------------------------------------------
+    # Webhooks
+    # ------------------------------------------------------------------
+
+    def create_webhook(
+        self,
+        blog_id: str,
+        url: str,
+        events: List[str],
+        *,
+        secret: Optional[str] = None,
+        manage_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """``POST /api/v1/blogs/{id}/webhooks`` — register a webhook."""
+        body: Dict[str, Any] = {"url": url, "events": events}
+        if secret is not None:
+            body["secret"] = secret
+        return self._request(
+            "POST", f"/api/v1/blogs/{blog_id}/webhooks",
+            json=body, manage_key=manage_key,
+        )
+
+    def list_webhooks(
+        self,
+        blog_id: str,
+        *,
+        manage_key: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """``GET /api/v1/blogs/{id}/webhooks`` — list all webhooks."""
+        return self._request(
+            "GET", f"/api/v1/blogs/{blog_id}/webhooks",
+            manage_key=manage_key,
+        )
+
+    def get_webhook(
+        self,
+        blog_id: str,
+        webhook_id: str,
+        *,
+        manage_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """``GET /api/v1/blogs/{id}/webhooks/{wh_id}`` — get webhook details."""
+        return self._request(
+            "GET", f"/api/v1/blogs/{blog_id}/webhooks/{webhook_id}",
+            manage_key=manage_key,
+        )
+
+    def delete_webhook(
+        self,
+        blog_id: str,
+        webhook_id: str,
+        *,
+        manage_key: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """``DELETE /api/v1/blogs/{id}/webhooks/{wh_id}`` — remove a webhook."""
+        return self._request(
+            "DELETE", f"/api/v1/blogs/{blog_id}/webhooks/{webhook_id}",
+            manage_key=manage_key,
+        )
+
+    def list_webhook_deliveries(
+        self,
+        blog_id: str,
+        webhook_id: str,
+        *,
+        limit: Optional[int] = None,
+        manage_key: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """``GET /api/v1/blogs/{id}/webhooks/{wh_id}/deliveries`` — delivery history."""
+        params: Dict[str, Any] = {}
+        if limit is not None:
+            params["limit"] = limit
+        return self._request(
+            "GET", f"/api/v1/blogs/{blog_id}/webhooks/{webhook_id}/deliveries",
+            params=params, manage_key=manage_key,
+        )
+
     # ------------------------------------------------------------------
     # Discovery
     # ------------------------------------------------------------------

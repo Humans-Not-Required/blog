@@ -4781,3 +4781,284 @@ fn test_rotate_key_twice() {
         .dispatch();
     assert_eq!(resp.status(), Status::Ok);
 }
+
+// ─── Webhook Tests ───
+
+#[test]
+fn test_create_webhook_requires_auth() {
+    let client = test_client();
+    let (blog_id, _key) = create_blog_helper(&client, "Webhook Blog");
+    let resp = client.post(format!("/api/v1/blogs/{}/webhooks", blog_id))
+        .header(ContentType::JSON)
+        .body(r#"{"url": "https://example.com/hook", "events": ["post.published"]}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Unauthorized);
+}
+
+#[test]
+fn test_create_webhook_success() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Webhook Blog");
+    let resp = client.post(format!("/api/v1/blogs/{}/webhooks", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"url": "https://example.com/hook", "events": ["post.published", "post.updated"]}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["blog_id"].as_str().unwrap(), blog_id);
+    assert_eq!(body["url"].as_str().unwrap(), "https://example.com/hook");
+    assert_eq!(body["events"].as_array().unwrap().len(), 2);
+    assert!(body["is_active"].as_bool().unwrap());
+    assert!(body["id"].as_str().is_some());
+}
+
+#[test]
+fn test_create_webhook_invalid_url() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Webhook Blog");
+    let resp = client.post(format!("/api/v1/blogs/{}/webhooks", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"url": "not-a-url", "events": ["post.published"]}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::UnprocessableEntity);
+}
+
+#[test]
+fn test_create_webhook_invalid_event() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Webhook Blog");
+    let resp = client.post(format!("/api/v1/blogs/{}/webhooks", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"url": "https://example.com/hook", "events": ["invalid.event"]}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::UnprocessableEntity);
+}
+
+#[test]
+fn test_create_webhook_empty_events() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Webhook Blog");
+    let resp = client.post(format!("/api/v1/blogs/{}/webhooks", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"url": "https://example.com/hook", "events": []}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::UnprocessableEntity);
+}
+
+#[test]
+fn test_list_webhooks() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Webhook Blog");
+
+    // Create two webhooks
+    client.post(format!("/api/v1/blogs/{}/webhooks", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"url": "https://example.com/hook1", "events": ["post.published"]}"#)
+        .dispatch();
+    client.post(format!("/api/v1/blogs/{}/webhooks", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"url": "https://example.com/hook2", "events": ["comment.created"]}"#)
+        .dispatch();
+
+    let resp = client.get(format!("/api/v1/blogs/{}/webhooks", blog_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body.as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn test_list_webhooks_requires_auth() {
+    let client = test_client();
+    let (blog_id, _key) = create_blog_helper(&client, "Webhook Blog");
+    let resp = client.get(format!("/api/v1/blogs/{}/webhooks", blog_id))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Unauthorized);
+}
+
+#[test]
+fn test_get_webhook() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Webhook Blog");
+
+    let create_resp = client.post(format!("/api/v1/blogs/{}/webhooks", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"url": "https://example.com/hook", "events": ["post.published"]}"#)
+        .dispatch();
+    let created: serde_json::Value = create_resp.into_json().unwrap();
+    let wh_id = created["id"].as_str().unwrap();
+
+    let resp = client.get(format!("/api/v1/blogs/{}/webhooks/{}", blog_id, wh_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["id"].as_str().unwrap(), wh_id);
+    assert_eq!(body["url"].as_str().unwrap(), "https://example.com/hook");
+}
+
+#[test]
+fn test_delete_webhook() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Webhook Blog");
+
+    let create_resp = client.post(format!("/api/v1/blogs/{}/webhooks", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"url": "https://example.com/hook", "events": ["post.published"]}"#)
+        .dispatch();
+    let created: serde_json::Value = create_resp.into_json().unwrap();
+    let wh_id = created["id"].as_str().unwrap();
+
+    let resp = client.delete(format!("/api/v1/blogs/{}/webhooks/{}", blog_id, wh_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert!(body["deleted"].as_bool().unwrap());
+
+    // Verify it's gone
+    let list_resp = client.get(format!("/api/v1/blogs/{}/webhooks", blog_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    let list: serde_json::Value = list_resp.into_json().unwrap();
+    assert_eq!(list.as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn test_delete_nonexistent_webhook() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Webhook Blog");
+    let resp = client.delete(format!("/api/v1/blogs/{}/webhooks/nonexistent", blog_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+}
+
+#[test]
+fn test_webhook_limit_per_blog() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Webhook Blog");
+
+    // Create 10 webhooks (the max)
+    for i in 0..10 {
+        let resp = client.post(format!("/api/v1/blogs/{}/webhooks", blog_id))
+            .header(ContentType::JSON)
+            .header(Header::new("Authorization", format!("Bearer {}", key)))
+            .body(format!(r#"{{"url": "https://example.com/hook{}", "events": ["post.published"]}}"#, i))
+            .dispatch();
+        assert_eq!(resp.status(), Status::Created);
+    }
+
+    // 11th should fail
+    let resp = client.post(format!("/api/v1/blogs/{}/webhooks", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"url": "https://example.com/hook-over-limit", "events": ["post.published"]}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::UnprocessableEntity);
+}
+
+#[test]
+fn test_webhook_with_secret() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Webhook Blog");
+    let resp = client.post(format!("/api/v1/blogs/{}/webhooks", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"url": "https://example.com/hook", "events": ["post.published"], "secret": "my-webhook-secret"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    // Secret should not be in response
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert!(body.get("secret").is_none());
+}
+
+#[test]
+fn test_webhook_isolation_between_blogs() {
+    let client = test_client();
+    let (blog_id1, key1) = create_blog_helper(&client, "Blog 1");
+    let (blog_id2, key2) = create_blog_helper(&client, "Blog 2");
+
+    // Create webhook on blog 1
+    client.post(format!("/api/v1/blogs/{}/webhooks", blog_id1))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key1)))
+        .body(r#"{"url": "https://example.com/hook1", "events": ["post.published"]}"#)
+        .dispatch();
+
+    // Blog 2 should have no webhooks
+    let resp = client.get(format!("/api/v1/blogs/{}/webhooks", blog_id2))
+        .header(Header::new("Authorization", format!("Bearer {}", key2)))
+        .dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body.as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn test_webhook_deliveries_empty() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Webhook Blog");
+
+    let create_resp = client.post(format!("/api/v1/blogs/{}/webhooks", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"url": "https://example.com/hook", "events": ["post.published"]}"#)
+        .dispatch();
+    let created: serde_json::Value = create_resp.into_json().unwrap();
+    let wh_id = created["id"].as_str().unwrap();
+
+    let resp = client.get(format!("/api/v1/blogs/{}/webhooks/{}/deliveries", blog_id, wh_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body.as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn test_delete_blog_cascades_webhooks() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Webhook Blog");
+
+    // Create a webhook
+    client.post(format!("/api/v1/blogs/{}/webhooks", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"url": "https://example.com/hook", "events": ["post.published"]}"#)
+        .dispatch();
+
+    // Delete blog
+    client.delete(format!("/api/v1/blogs/{}", blog_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+
+    // Webhook should be gone (blog doesn't exist)
+    let resp = client.get(format!("/api/v1/blogs/{}/webhooks", blog_id))
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    // Blog doesn't exist anymore so auth fails
+    assert_ne!(resp.status(), Status::Ok);
+}
+
+#[test]
+fn test_webhook_all_valid_events() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Webhook Blog");
+    let resp = client.post(format!("/api/v1/blogs/{}/webhooks", blog_id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"url": "https://example.com/hook", "events": ["post.published", "post.updated", "post.deleted", "comment.created"]}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Created);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["events"].as_array().unwrap().len(), 4);
+}

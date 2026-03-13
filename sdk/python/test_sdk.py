@@ -1407,3 +1407,98 @@ if __name__ == "__main__":
     print(f"   Server: {BASE_URL}")
     print(f"   Write tests: {'ENABLED (BLOG_KEY set)' if MANAGE_KEY else 'SKIPPED (set BLOG_KEY to enable)'}\n")
     unittest.main(verbosity=2)
+
+
+# ─── Webhook SDK Tests ───
+
+
+class TestWebhookCRUD:
+    """Test webhook create/list/get/delete via SDK."""
+
+    def test_create_webhook(self, blog):
+        blog_id, key = blog
+        wh = client.create_webhook(
+            blog_id, "https://example.com/hook",
+            ["post.published"], manage_key=key,
+        )
+        assert wh["blog_id"] == blog_id
+        assert wh["url"] == "https://example.com/hook"
+        assert wh["events"] == ["post.published"]
+        assert wh["is_active"] is True
+        assert "id" in wh
+
+    def test_create_webhook_with_secret(self, blog):
+        blog_id, key = blog
+        wh = client.create_webhook(
+            blog_id, "https://example.com/hook",
+            ["post.published", "comment.created"],
+            secret="my-secret", manage_key=key,
+        )
+        assert "secret" not in wh
+        assert len(wh["events"]) == 2
+
+    def test_create_webhook_invalid_url(self, blog):
+        blog_id, key = blog
+        with pytest.raises(BlogError):
+            client.create_webhook(
+                blog_id, "not-a-url",
+                ["post.published"], manage_key=key,
+            )
+
+    def test_create_webhook_invalid_event(self, blog):
+        blog_id, key = blog
+        with pytest.raises(BlogError):
+            client.create_webhook(
+                blog_id, "https://example.com/hook",
+                ["invalid.event"], manage_key=key,
+            )
+
+    def test_list_webhooks(self, blog):
+        blog_id, key = blog
+        client.create_webhook(
+            blog_id, "https://example.com/hook1",
+            ["post.published"], manage_key=key,
+        )
+        client.create_webhook(
+            blog_id, "https://example.com/hook2",
+            ["comment.created"], manage_key=key,
+        )
+        hooks = client.list_webhooks(blog_id, manage_key=key)
+        assert len(hooks) == 2
+
+    def test_get_webhook(self, blog):
+        blog_id, key = blog
+        wh = client.create_webhook(
+            blog_id, "https://example.com/hook",
+            ["post.published"], manage_key=key,
+        )
+        fetched = client.get_webhook(blog_id, wh["id"], manage_key=key)
+        assert fetched["id"] == wh["id"]
+        assert fetched["url"] == "https://example.com/hook"
+
+    def test_delete_webhook(self, blog):
+        blog_id, key = blog
+        wh = client.create_webhook(
+            blog_id, "https://example.com/hook",
+            ["post.published"], manage_key=key,
+        )
+        result = client.delete_webhook(blog_id, wh["id"], manage_key=key)
+        assert result["deleted"] is True
+        hooks = client.list_webhooks(blog_id, manage_key=key)
+        assert len(hooks) == 0
+
+    def test_webhook_deliveries_empty(self, blog):
+        blog_id, key = blog
+        wh = client.create_webhook(
+            blog_id, "https://example.com/hook",
+            ["post.published"], manage_key=key,
+        )
+        deliveries = client.list_webhook_deliveries(
+            blog_id, wh["id"], manage_key=key,
+        )
+        assert deliveries == []
+
+    def test_webhook_requires_auth(self, blog):
+        blog_id, _ = blog
+        with pytest.raises(BlogError):
+            client.list_webhooks(blog_id)

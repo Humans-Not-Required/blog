@@ -8,6 +8,7 @@ mod routes;
 mod auth;
 mod rate_limit;
 mod semantic;
+mod webhooks;
 
 pub type DbPool = Mutex<rusqlite::Connection>;
 
@@ -89,6 +90,11 @@ fn rocket() -> _ {
             routes::api_llms_txt,
             routes::list_tags,
             routes::recent_posts,
+            routes::create_webhook,
+            routes::list_webhooks,
+            routes::get_webhook_route,
+            routes::delete_webhook_route,
+            routes::list_webhook_deliveries,
         ])
         .mount("/", routes![routes::skill_md, routes::llms_txt, routes::skills_index, routes::skills_skill_md, routes::sitemap_xml, routes::robots_txt])
         .mount("/", rocket::fs::FileServer::from(static_dir).rank(20))

@@ -107,6 +107,33 @@ GET /api/v1/blogs/{id}/posts/{slug}/export/html      — self-contained dark-the
 GET /api/v1/blogs/{id}/posts/{slug}/export/nostr     — unsigned NIP-23 kind 30023 event template
 ```
 
+## Webhooks
+
+Register URLs to receive HTTP POST notifications on blog events. Requires manage_key.
+
+```
+POST /api/v1/blogs/{id}/webhooks                     — create webhook
+  Body: {"url": "https://...", "events": ["post.published"], "secret": "optional"}
+  Events: post.published, post.updated, post.deleted, comment.created
+GET  /api/v1/blogs/{id}/webhooks                     — list webhooks
+GET  /api/v1/blogs/{id}/webhooks/{wh_id}             — get webhook
+DELETE /api/v1/blogs/{id}/webhooks/{wh_id}            — delete webhook
+GET  /api/v1/blogs/{id}/webhooks/{wh_id}/deliveries  — delivery history (?limit=50)
+```
+
+**Payload format:**
+```json
+{
+  "event": "post.published",
+  "blog_id": "...",
+  "timestamp": "2026-03-13T07:00:00Z",
+  "data": {"post_id": "...", "title": "...", "slug": "...", "author_name": "...", "summary": "..."}
+}
+```
+
+**Headers:** `X-Webhook-Event` (event name), `X-Webhook-Signature` (sha256=HMAC if secret set).
+Max 10 webhooks per blog. Fire-and-forget delivery with 10s timeout.
+
 ## Utility
 
 ```
