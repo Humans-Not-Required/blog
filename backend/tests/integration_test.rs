@@ -3909,6 +3909,8 @@ fn test_spa_fallback_post_has_feed_discovery() {
     let json_expected = format!(r#"<link rel="alternate" type="application/json" title="Feed Discovery Blog JSON Feed" href="/api/v1/blogs/{}/feed.json" />"#, blog_id);
     assert!(body.contains(&rss_expected), "RSS feed discovery link missing from post page");
     assert!(body.contains(&json_expected), "JSON feed discovery link missing from post page");
+    let atom_expected = format!(r#"<link rel="alternate" type="application/atom+xml" title="Feed Discovery Blog Atom Feed" href="/api/v1/blogs/{}/feed.atom" />"#, blog_id);
+    assert!(body.contains(&atom_expected), "Atom feed discovery link missing from post page");
 }
 
 #[test]
@@ -3923,6 +3925,8 @@ fn test_spa_fallback_blog_has_feed_discovery() {
     let json_expected = format!(r#"<link rel="alternate" type="application/json" title="Blog Feed Discovery JSON Feed" href="/api/v1/blogs/{}/feed.json" />"#, blog_id);
     assert!(body.contains(&rss_expected), "RSS feed discovery link missing from blog page");
     assert!(body.contains(&json_expected), "JSON feed discovery link missing from blog page");
+    let atom_expected = format!(r#"<link rel="alternate" type="application/atom+xml" title="Blog Feed Discovery Atom Feed" href="/api/v1/blogs/{}/feed.atom" />"#, blog_id);
+    assert!(body.contains(&atom_expected), "Atom feed discovery link missing from blog page");
 }
 
 #[test]
@@ -4218,4 +4222,126 @@ fn test_recent_posts_across_multiple_blogs() {
     let blog_names: Vec<&str> = posts.iter().map(|p| p["blog_name"].as_str().unwrap()).collect();
     assert!(blog_names.contains(&"Blog One"));
     assert!(blog_names.contains(&"Blog Two"));
+}
+
+// ── Atom Feed ───────────────────────────────────────────────────────────
+
+#[test]
+fn test_atom_feed() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Atom Blog");
+    client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Atom Post", "content": "Hello atom", "status": "published"}"#)
+        .dispatch();
+
+    let resp = client.get(format!("/api/v1/blogs/{}/feed.atom", id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    assert!(body.contains("<feed xmlns=\"http://www.w3.org/2005/Atom\">"), "Missing Atom namespace");
+    assert!(body.contains("Atom Post"), "Missing entry title");
+    assert!(body.contains("<entry>"), "Missing entry element");
+}
+
+#[test]
+fn test_atom_feed_structure_detailed() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Atom Detail Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+        .header(ContentType::JSON).header(auth)
+        .body(serde_json::json!({
+            "title": "Atom Article",
+            "content": "Full **markdown** content for atom",
+            "summary": "Brief atom summary",
+            "author_name": "Atom Author",
+            "tags": ["atom", "feed"],
+            "status": "published"
+        }).to_string())
+        .dispatch();
+
+    let resp = client.get(format!("/api/v1/blogs/{}/feed.atom", blog_id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+
+    // Structural checks
+    assert!(body.contains("<?xml"), "Missing XML declaration");
+    assert!(body.contains("<feed xmlns=\"http://www.w3.org/2005/Atom\">"), "Missing Atom feed element");
+    assert!(body.contains("<title><![CDATA[Atom Detail Blog]]></title>"), "Missing feed title");
+    assert!(body.contains(&format!("urn:uuid:{}", blog_id)), "Missing feed id");
+    assert!(body.contains("<updated>"), "Missing feed updated");
+    assert!(body.contains("<entry>"), "Missing entry element");
+    assert!(body.contains("Atom Article"), "Missing entry title");
+    assert!(body.contains("<published>"), "Missing entry published");
+    assert!(body.contains("<author><name>Atom Author</name></author>"), "Missing entry author");
+    assert!(body.contains("<summary>"), "Missing entry summary");
+    assert!(body.contains("Brief atom summary"), "Summary content missing");
+    assert!(body.contains("<content type=\"html\">"), "Missing entry content");
+    assert!(body.contains("<category term=\"atom\" />"), "Missing atom tag");
+    assert!(body.contains("<category term=\"feed\" />"), "Missing feed tag");
+    assert!(body.contains("rel=\"self\""), "Missing self link");
+    assert!(body.contains("feed.atom"), "Self link should reference feed.atom");
+}
+
+#[test]
+fn test_atom_feed_excludes_drafts() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Atom Draft Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON).header(auth.clone())
+        .body(r#"{"title": "Published Atom", "content": "visible", "status": "published"}"#)
+        .dispatch();
+    client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON).header(auth)
+        .body(r#"{"title": "Draft Atom", "content": "hidden"}"#)
+        .dispatch();
+
+    let resp = client.get(format!("/api/v1/blogs/{}/feed.atom", id)).dispatch();
+    let body = resp.into_string().unwrap();
+    assert!(body.contains("Published Atom"), "Published post should appear");
+    assert!(!body.contains("Draft Atom"), "Draft post should NOT appear");
+}
+
+#[test]
+fn test_atom_feed_ordering_newest_first() {
+    let client = test_client();
+    let (blog_id, key) = create_blog_helper(&client, "Atom Order Blog");
+    let auth = Header::new("Authorization", format!("Bearer {}", key));
+
+    for i in 0..3 {
+        client.post(format!("/api/v1/blogs/{}/posts", blog_id))
+            .header(ContentType::JSON).header(auth.clone())
+            .body(format!(r#"{{"title": "Atom Post {}", "status": "published"}}"#, i))
+            .dispatch();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+
+    let resp = client.get(format!("/api/v1/blogs/{}/feed.atom", blog_id)).dispatch();
+    let body = resp.into_string().unwrap();
+
+    let pos_2 = body.find("Atom Post 2").unwrap();
+    let pos_0 = body.find("Atom Post 0").unwrap();
+    assert!(pos_2 < pos_0, "Newest post should appear first in Atom feed");
+}
+
+#[test]
+fn test_atom_feed_not_found() {
+    let client = test_client();
+    let resp = client.get("/api/v1/blogs/nonexistent/feed.atom").dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+}
+
+#[test]
+fn test_atom_feed_empty_blog() {
+    let client = test_client();
+    let (id, _key) = create_blog_helper(&client, "Empty Atom Blog");
+    let resp = client.get(format!("/api/v1/blogs/{}/feed.atom", id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    assert!(body.contains("<feed xmlns"), "Empty feed should still be valid Atom");
+    assert!(!body.contains("<entry>"), "Empty feed should have no entries");
 }

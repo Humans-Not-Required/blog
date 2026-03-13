@@ -93,6 +93,7 @@ GET /api/v1/posts/recent                             — latest posts across all
 ```
 GET /api/v1/blogs/{id}/feed.rss                      — RSS 2.0 feed
 GET /api/v1/blogs/{id}/feed.json                     — JSON Feed 1.1
+GET /api/v1/blogs/{id}/feed.atom                     — Atom 1.0 feed
 ```
 
 ## Cross-Posting Export

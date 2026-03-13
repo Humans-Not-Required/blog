@@ -833,6 +833,127 @@ pub fn json_feed(blog_id: &str, db: &State<DbPool>) -> Result<Json<serde_json::V
     })))
 }
 
+// ─── Atom Feed ───
+
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
+#[get("/blogs/<blog_id>/feed.atom")]
+pub fn atom_feed(blog_id: &str, db: &State<DbPool>) -> ContentResult {
+    let conn = db.conn();
+    let blog = conn.query_row(
+        "SELECT name, description FROM blogs WHERE id = ?1", [blog_id],
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+    ).map_err(|_| err(Status::NotFound, "Blog not found", "NOT_FOUND"))?;
+
+    let base = base_url();
+
+    let mut stmt = conn.prepare(
+        "SELECT id, title, slug, summary, content_html, published_at, author_name, tags, updated_at FROM posts WHERE blog_id = ?1 AND status = 'published' ORDER BY published_at DESC LIMIT 50"
+    ).map_err(|e| db_err(&e.to_string()))?;
+
+    let entries: Vec<String> = stmt.query_map([blog_id], |row| {
+        let post_id: String = row.get(0)?;
+        let title: String = row.get(1)?;
+        let slug: String = row.get(2)?;
+        let summary: String = row.get(3)?;
+        let content_html: String = row.get(4)?;
+        let published_at: String = row.get::<_, Option<String>>(5)?.unwrap_or_default();
+        let author: String = row.get(6)?;
+        let tags_str: String = row.get(7)?;
+        let updated_at: String = row.get(8)?;
+        let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
+
+        let post_url = if base.is_empty() {
+            format!("/blog/{}/post/{}", blog_id, slug)
+        } else {
+            format!("{}/blog/{}/post/{}", base, blog_id, slug)
+        };
+
+        let category_tags: String = tags.iter()
+            .map(|t| format!("    <category term=\"{}\" />", xml_escape(t)))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let summary_el = if summary.is_empty() {
+            String::new()
+        } else {
+            format!("    <summary><![CDATA[{}]]></summary>\n", summary)
+        };
+
+        Ok(format!(
+            r#"  <entry>
+    <title><![CDATA[{title}]]></title>
+    <link href="{url}" rel="alternate" type="text/html" />
+    <id>urn:uuid:{id}</id>
+    <updated>{updated}</updated>
+    <published>{published}</published>
+    <author><name>{author}</name></author>
+{summary}    <content type="html"><![CDATA[{content}]]></content>
+{categories}  </entry>"#,
+            title = title,
+            url = post_url,
+            id = post_id,
+            updated = updated_at,
+            published = published_at,
+            author = xml_escape(&author),
+            summary = summary_el,
+            content = content_html,
+            categories = category_tags,
+        ))
+    }).map_err(|e| db_err(&e.to_string()))?
+    .filter_map(|r| r.ok())
+    .collect();
+
+    // Feed updated = most recent entry's updated_at, or now
+    let feed_updated = entries.first()
+        .and_then(|_| {
+            conn.query_row(
+                "SELECT COALESCE(MAX(updated_at), datetime('now')) FROM posts WHERE blog_id = ?1 AND status = 'published'",
+                [blog_id], |row| row.get::<_, String>(0),
+            ).ok()
+        })
+        .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+
+    let blog_link = if base.is_empty() {
+        format!("/blog/{}", blog_id)
+    } else {
+        format!("{}/blog/{}", base, blog_id)
+    };
+    let self_link = if base.is_empty() {
+        format!("/api/v1/blogs/{}/feed.atom", blog_id)
+    } else {
+        format!("{}/api/v1/blogs/{}/feed.atom", base, blog_id)
+    };
+
+    let atom = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title><![CDATA[{title}]]></title>
+  <subtitle><![CDATA[{subtitle}]]></subtitle>
+  <link href="{blog_link}" rel="alternate" type="text/html" />
+  <link href="{self_link}" rel="self" type="application/atom+xml" />
+  <id>urn:uuid:{blog_id}</id>
+  <updated>{updated}</updated>
+{entries}
+</feed>"#,
+        title = blog.0,
+        subtitle = blog.1,
+        blog_link = blog_link,
+        self_link = self_link,
+        blog_id = blog_id,
+        updated = feed_updated,
+        entries = entries.join("\n"),
+    );
+
+    Ok((Status::Ok, (rocket::http::ContentType::XML, atom)))
+}
+
 // ─── Search (FTS5 full-text) ───
 
 #[derive(Serialize)]
@@ -1659,14 +1780,16 @@ fn inject_post_meta(html: &mut String, blog_id: &str, slug: &str, db: &State<DbP
         let feed_links = if base.is_empty() {
             format!(
                 "<link rel=\"alternate\" type=\"application/rss+xml\" title=\"{site} RSS Feed\" href=\"/api/v1/blogs/{blog_id}/feed.rss\" />\n\
-    <link rel=\"alternate\" type=\"application/json\" title=\"{site} JSON Feed\" href=\"/api/v1/blogs/{blog_id}/feed.json\" />",
+    <link rel=\"alternate\" type=\"application/json\" title=\"{site} JSON Feed\" href=\"/api/v1/blogs/{blog_id}/feed.json\" />\n\
+    <link rel=\"alternate\" type=\"application/atom+xml\" title=\"{site} Atom Feed\" href=\"/api/v1/blogs/{blog_id}/feed.atom\" />",
                 site = escaped_site,
                 blog_id = html_escape(blog_id),
             )
         } else {
             format!(
                 "<link rel=\"alternate\" type=\"application/rss+xml\" title=\"{site} RSS Feed\" href=\"{base}/api/v1/blogs/{blog_id}/feed.rss\" />\n\
-    <link rel=\"alternate\" type=\"application/json\" title=\"{site} JSON Feed\" href=\"{base}/api/v1/blogs/{blog_id}/feed.json\" />",
+    <link rel=\"alternate\" type=\"application/json\" title=\"{site} JSON Feed\" href=\"{base}/api/v1/blogs/{blog_id}/feed.json\" />\n\
+    <link rel=\"alternate\" type=\"application/atom+xml\" title=\"{site} Atom Feed\" href=\"{base}/api/v1/blogs/{blog_id}/feed.atom\" />",
                 site = escaped_site,
                 base = base,
                 blog_id = html_escape(blog_id),
@@ -1727,14 +1850,16 @@ fn inject_blog_meta(html: &mut String, blog_id: &str, db: &State<DbPool>) {
         let feed_links = if base.is_empty() {
             format!(
                 "<link rel=\"alternate\" type=\"application/rss+xml\" title=\"{name} RSS Feed\" href=\"/api/v1/blogs/{blog_id}/feed.rss\" />\n\
-    <link rel=\"alternate\" type=\"application/json\" title=\"{name} JSON Feed\" href=\"/api/v1/blogs/{blog_id}/feed.json\" />",
+    <link rel=\"alternate\" type=\"application/json\" title=\"{name} JSON Feed\" href=\"/api/v1/blogs/{blog_id}/feed.json\" />\n\
+    <link rel=\"alternate\" type=\"application/atom+xml\" title=\"{name} Atom Feed\" href=\"/api/v1/blogs/{blog_id}/feed.atom\" />",
                 name = escaped_name,
                 blog_id = html_escape(blog_id),
             )
         } else {
             format!(
                 "<link rel=\"alternate\" type=\"application/rss+xml\" title=\"{name} RSS Feed\" href=\"{base}/api/v1/blogs/{blog_id}/feed.rss\" />\n\
-    <link rel=\"alternate\" type=\"application/json\" title=\"{name} JSON Feed\" href=\"{base}/api/v1/blogs/{blog_id}/feed.json\" />",
+    <link rel=\"alternate\" type=\"application/json\" title=\"{name} JSON Feed\" href=\"{base}/api/v1/blogs/{blog_id}/feed.json\" />\n\
+    <link rel=\"alternate\" type=\"application/atom+xml\" title=\"{name} Atom Feed\" href=\"{base}/api/v1/blogs/{blog_id}/feed.atom\" />",
                 name = escaped_name,
                 base = base,
                 blog_id = html_escape(blog_id),

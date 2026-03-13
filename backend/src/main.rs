@@ -75,6 +75,7 @@ fn rocket() -> _ {
             routes::unpin_post,
             routes::rss_feed,
             routes::json_feed,
+            routes::atom_feed,
             routes::search_posts,
             routes::semantic_search,
             routes::preview_markdown,

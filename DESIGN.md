@@ -88,6 +88,7 @@ CREATE TABLE comments (
 |--------|------|------|-------------|
 | GET | /api/v1/blogs/:id/feed.rss | None | RSS feed |
 | GET | /api/v1/blogs/:id/feed.json | None | JSON Feed |
+| GET | /api/v1/blogs/:id/feed.atom | None | Atom Feed |
 
 ### Discovery
 | Method | Path | Auth | Description |
@@ -115,10 +116,11 @@ Same as kanban:
 - Can be overridden in request
 - Must be unique per blog
 
-## RSS/JSON Feed
+## RSS/JSON/Atom Feed
 
 - Standard RSS 2.0 XML
 - JSON Feed 1.1 format
+- Atom 1.0 XML (with categories, summaries, and content)
 - Published posts only, ordered by published_at desc
 - Limit 50 items
 
