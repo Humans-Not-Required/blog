@@ -39,6 +39,10 @@ pub struct BlogResponse {
     pub is_public: bool,
     pub created_at: String,
     pub updated_at: String,
+    pub post_count: i64,
+    pub comment_count: i64,
+    pub total_views: i64,
+    pub latest_post_at: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -232,7 +236,12 @@ pub fn create_blog(req: Json<CreateBlogReq>, client_ip: ClientIp, limiters: &Sta
 pub fn list_blogs(db: &State<DbPool>) -> Result<Json<Vec<BlogResponse>>, (Status, Json<ApiError>)> {
     let conn = db.conn();
     let mut stmt = conn.prepare(
-        "SELECT id, name, description, is_public, created_at, updated_at FROM blogs WHERE is_public = 1 ORDER BY created_at DESC"
+        "SELECT b.id, b.name, b.description, b.is_public, b.created_at, b.updated_at,
+                (SELECT COUNT(*) FROM posts p WHERE p.blog_id = b.id AND p.status = 'published') as post_count,
+                (SELECT COUNT(*) FROM comments c JOIN posts p ON c.post_id = p.id WHERE p.blog_id = b.id) as comment_count,
+                (SELECT COUNT(*) FROM post_views v JOIN posts p ON v.post_id = p.id WHERE p.blog_id = b.id) as total_views,
+                (SELECT MAX(p.published_at) FROM posts p WHERE p.blog_id = b.id AND p.status = 'published') as latest_post_at
+         FROM blogs b WHERE b.is_public = 1 ORDER BY b.created_at DESC"
     ).map_err(|e| db_err(&e.to_string()))?;
 
     let blogs = stmt.query_map([], |row| {
@@ -243,6 +252,10 @@ pub fn list_blogs(db: &State<DbPool>) -> Result<Json<Vec<BlogResponse>>, (Status
             is_public: row.get::<_, i32>(3)? != 0,
             created_at: row.get(4)?,
             updated_at: row.get(5)?,
+            post_count: row.get(6)?,
+            comment_count: row.get(7)?,
+            total_views: row.get(8)?,
+            latest_post_at: row.get(9)?,
         })
     }).map_err(|e| db_err(&e.to_string()))?
     .filter_map(|r| r.ok())
@@ -255,7 +268,12 @@ pub fn list_blogs(db: &State<DbPool>) -> Result<Json<Vec<BlogResponse>>, (Status
 pub fn get_blog(blog_id: &str, db: &State<DbPool>) -> Result<Json<BlogResponse>, (Status, Json<ApiError>)> {
     let conn = db.conn();
     conn.query_row(
-        "SELECT id, name, description, is_public, created_at, updated_at FROM blogs WHERE id = ?1",
+        "SELECT b.id, b.name, b.description, b.is_public, b.created_at, b.updated_at,
+                (SELECT COUNT(*) FROM posts p WHERE p.blog_id = b.id AND p.status = 'published') as post_count,
+                (SELECT COUNT(*) FROM comments c JOIN posts p ON c.post_id = p.id WHERE p.blog_id = b.id) as comment_count,
+                (SELECT COUNT(*) FROM post_views v JOIN posts p ON v.post_id = p.id WHERE p.blog_id = b.id) as total_views,
+                (SELECT MAX(p.published_at) FROM posts p WHERE p.blog_id = b.id AND p.status = 'published') as latest_post_at
+         FROM blogs b WHERE b.id = ?1",
         [blog_id],
         |row| Ok(BlogResponse {
             id: row.get(0)?,
@@ -264,6 +282,10 @@ pub fn get_blog(blog_id: &str, db: &State<DbPool>) -> Result<Json<BlogResponse>,
             is_public: row.get::<_, i32>(3)? != 0,
             created_at: row.get(4)?,
             updated_at: row.get(5)?,
+            post_count: row.get(6)?,
+            comment_count: row.get(7)?,
+            total_views: row.get(8)?,
+            latest_post_at: row.get(9)?,
         }),
     ).map_err(|_| err(Status::NotFound, "Blog not found", "NOT_FOUND"))
     .map(Json)
@@ -289,7 +311,12 @@ pub fn update_blog(blog_id: &str, req: Json<UpdateBlogReq>, token: BlogToken, db
     ).map_err(|e| db_err(&e.to_string()))?;
 
     conn.query_row(
-        "SELECT id, name, description, is_public, created_at, updated_at FROM blogs WHERE id = ?1",
+        "SELECT b.id, b.name, b.description, b.is_public, b.created_at, b.updated_at,
+                (SELECT COUNT(*) FROM posts p WHERE p.blog_id = b.id AND p.status = 'published') as post_count,
+                (SELECT COUNT(*) FROM comments c JOIN posts p ON c.post_id = p.id WHERE p.blog_id = b.id) as comment_count,
+                (SELECT COUNT(*) FROM post_views v JOIN posts p ON v.post_id = p.id WHERE p.blog_id = b.id) as total_views,
+                (SELECT MAX(p.published_at) FROM posts p WHERE p.blog_id = b.id AND p.status = 'published') as latest_post_at
+         FROM blogs b WHERE b.id = ?1",
         [blog_id],
         |row| Ok(BlogResponse {
             id: row.get(0)?,
@@ -298,6 +325,10 @@ pub fn update_blog(blog_id: &str, req: Json<UpdateBlogReq>, token: BlogToken, db
             is_public: row.get::<_, i32>(3)? != 0,
             created_at: row.get(4)?,
             updated_at: row.get(5)?,
+            post_count: row.get(6)?,
+            comment_count: row.get(7)?,
+            total_views: row.get(8)?,
+            latest_post_at: row.get(9)?,
         }),
     ).map_err(|_| err(Status::NotFound, "Blog not found", "NOT_FOUND"))
     .map(Json)

@@ -32,8 +32,8 @@ Save your `manage_key` — it's shown only once.
 
 ```
 POST   /api/v1/blogs                          — create blog (returns manage_key)
-GET    /api/v1/blogs                          — list public blogs
-GET    /api/v1/blogs/{id}                     — blog details
+GET    /api/v1/blogs                          — list public blogs (includes post_count, comment_count, total_views, latest_post_at)
+GET    /api/v1/blogs/{id}                     — blog details (includes post_count, comment_count, total_views, latest_post_at)
 PATCH  /api/v1/blogs/{id}                     — update blog (manage_key)
 DELETE /api/v1/blogs/{id}                     — delete blog + all content (manage_key)
 ```

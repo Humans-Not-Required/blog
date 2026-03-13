@@ -4345,3 +4345,187 @@ fn test_atom_feed_empty_blog() {
     assert!(body.contains("<feed xmlns"), "Empty feed should still be valid Atom");
     assert!(!body.contains("<entry>"), "Empty feed should have no entries");
 }
+
+// ─── Blog Metadata Enrichment Tests ───
+
+#[test]
+fn test_blog_response_has_metadata_fields() {
+    let client = test_client();
+    let (id, _key) = create_blog_helper(&client, "Metadata Blog");
+    let resp = client.get(format!("/api/v1/blogs/{}", id)).dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["post_count"], 0);
+    assert_eq!(body["comment_count"], 0);
+    assert_eq!(body["total_views"], 0);
+    assert!(body["latest_post_at"].is_null());
+}
+
+#[test]
+fn test_blog_metadata_post_count_published_only() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Count Blog");
+    // Create a draft post
+    client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Draft Post", "content": "draft"}"#)
+        .dispatch();
+    // Create a published post
+    client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Published Post", "content": "published", "status": "published"}"#)
+        .dispatch();
+    let resp = client.get(format!("/api/v1/blogs/{}", id)).dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["post_count"], 1, "post_count should only count published posts");
+}
+
+#[test]
+fn test_blog_metadata_comment_count() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Comment Count Blog");
+    // Create a published post
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Post", "content": "content", "status": "published"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let post_id = post["id"].as_str().unwrap();
+    // Add 3 comments
+    for i in 0..3 {
+        client.post(format!("/api/v1/blogs/{}/posts/{}/comments", id, post_id))
+            .header(ContentType::JSON)
+            .body(format!(r#"{{"author_name": "user{}", "content": "comment {}"}}"#, i, i))
+            .dispatch();
+    }
+    let resp = client.get(format!("/api/v1/blogs/{}", id)).dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["comment_count"], 3);
+}
+
+#[test]
+fn test_blog_metadata_total_views() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Views Blog");
+    // Create a published post
+    let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Viewable Post", "content": "content", "status": "published"}"#)
+        .dispatch();
+    let post: serde_json::Value = resp.into_json().unwrap();
+    let slug = post["slug"].as_str().unwrap();
+    // View the post 3 times (each GET by slug records a view)
+    for _ in 0..3 {
+        client.get(format!("/api/v1/blogs/{}/posts/{}", id, slug)).dispatch();
+    }
+    let resp = client.get(format!("/api/v1/blogs/{}", id)).dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["total_views"], 3);
+}
+
+#[test]
+fn test_blog_metadata_latest_post_at() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Latest Blog");
+    // Create two published posts
+    client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "First Post", "content": "first", "status": "published"}"#)
+        .dispatch();
+    client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Second Post", "content": "second", "status": "published"}"#)
+        .dispatch();
+    let resp = client.get(format!("/api/v1/blogs/{}", id)).dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert!(body["latest_post_at"].is_string(), "latest_post_at should be a timestamp string");
+}
+
+#[test]
+fn test_blog_metadata_in_list_blogs() {
+    let client = test_client();
+    // Create a public blog with a published post
+    let resp = client.post("/api/v1/blogs")
+        .header(ContentType::JSON)
+        .body(r#"{"name": "Public Meta Blog", "is_public": true}"#)
+        .dispatch();
+    let blog: serde_json::Value = resp.into_json().unwrap();
+    let id = blog["id"].as_str().unwrap();
+    let key = blog["manage_key"].as_str().unwrap();
+    // Add a published post
+    client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Listed Post", "content": "content", "status": "published"}"#)
+        .dispatch();
+    // List blogs
+    let resp = client.get("/api/v1/blogs").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let blogs = body.as_array().unwrap();
+    assert!(!blogs.is_empty());
+    assert_eq!(blogs[0]["post_count"], 1);
+    assert_eq!(blogs[0]["comment_count"], 0);
+    assert_eq!(blogs[0]["total_views"], 0);
+    assert!(blogs[0]["latest_post_at"].is_string());
+}
+
+#[test]
+fn test_blog_metadata_in_update_response() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Update Meta Blog");
+    // Add a published post
+    client.post(format!("/api/v1/blogs/{}/posts", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"title": "Post", "content": "x", "status": "published"}"#)
+        .dispatch();
+    // Update blog name
+    let resp = client.patch(format!("/api/v1/blogs/{}", id))
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"{"name": "Renamed Blog"}"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["name"], "Renamed Blog");
+    assert_eq!(body["post_count"], 1);
+    assert_eq!(body["total_views"], 0);
+}
+
+#[test]
+fn test_blog_metadata_multi_post_multi_comment() {
+    let client = test_client();
+    let (id, key) = create_blog_helper(&client, "Multi Blog");
+    // Create 3 published posts
+    let mut post_ids = Vec::new();
+    for i in 0..3 {
+        let resp = client.post(format!("/api/v1/blogs/{}/posts", id))
+            .header(ContentType::JSON)
+            .header(Header::new("Authorization", format!("Bearer {}", key)))
+            .body(format!(r#"{{"title": "Post {}", "content": "content {}", "status": "published"}}"#, i, i))
+            .dispatch();
+        let post: serde_json::Value = resp.into_json().unwrap();
+        post_ids.push(post["id"].as_str().unwrap().to_string());
+    }
+    // Add 2 comments to first post, 1 to second
+    for j in 0..2 {
+        client.post(format!("/api/v1/blogs/{}/posts/{}/comments", id, post_ids[0]))
+            .header(ContentType::JSON)
+            .body(format!(r#"{{"author_name": "u{}", "content": "c{}"}}"#, j, j))
+            .dispatch();
+    }
+    client.post(format!("/api/v1/blogs/{}/posts/{}/comments", id, post_ids[1]))
+        .header(ContentType::JSON)
+        .body(r#"{"author_name": "u", "content": "c"}"#)
+        .dispatch();
+    let resp = client.get(format!("/api/v1/blogs/{}", id)).dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["post_count"], 3);
+    assert_eq!(body["comment_count"], 3);
+}

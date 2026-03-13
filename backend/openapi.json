@@ -1087,6 +1087,24 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "post_count": {
+            "type": "integer",
+            "description": "Number of published posts in the blog"
+          },
+          "comment_count": {
+            "type": "integer",
+            "description": "Total number of comments across all posts"
+          },
+          "total_views": {
+            "type": "integer",
+            "description": "Total view count across all posts"
+          },
+          "latest_post_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Timestamp of the most recently published post, null if no published posts"
           }
         }
       },
